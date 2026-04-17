@@ -9,7 +9,7 @@ $Version = "1.0"
 function Show-Auth {
     Clear-Host
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "   NODE STORAGE SYSTEM v$Version" -ForegroundColor Cyan
+    Write-Host "   BASX DLL v$Version" -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     
     # 1. ขั้นตอน Initialize (สร้าง Session)
