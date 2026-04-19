@@ -1,9 +1,9 @@
 # ==========================================
 # BASX PROJECT - FIXED KEYAUTH VERSION
 # ==========================================
-$Name = "BASXApp1"
-$OwnerID = "k6IHOhxMaB"
-$Secret = "c756c6e4e539eb2ee4662621f46dd65c0adfe43c073a73b4165e8792f3cf87ae"
+$Name = "Relaxwtf777's Application"
+$OwnerID = "W404AorT6U"
+$Secret = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
 $Version = "1.0"
 
 function Show-Auth {
