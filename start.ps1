@@ -1,19 +1,15 @@
-# ==========================================
-# BASX PROJECT - FIXED KEYAUTH VERSION
-# ==========================================
-$Name = "Relaxwtf777's Application"
+$Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
-$Secret = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
+$Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
 $Version = "1.0"
 
 function Show-Auth {
     Clear-Host
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "   BASX DLL v$Version" -ForegroundColor Cyan
+    Write-Host "    BASX AIMBOT AI v$Version" -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     
-    # 1. ขั้นตอน Initialize (สร้าง Session)
-    $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$Name&ownerid=$OwnerID&secret=$Secret&version=$Version"
+    $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
     try {
         $initRes = Invoke-RestMethod -Uri $initUrl -Method Get
         if ($initRes.success -ne $true) {
@@ -22,41 +18,42 @@ function Show-Auth {
         }
         $sessionId = $initRes.sessionid
     } catch {
-        Write-Host "[!] Cannot connect to Auth Server." -ForegroundColor Red
+        Write-Host "[!] Connection Error: Cannot reach KeyAuth server." -ForegroundColor Red
         return $false
     }
 
-    # 2. ขั้นตอน Check License
     $key = Read-Host " Enter License Key"
     $hwid = (Get-CimInstance Win32_ComputerSystemProduct).UUID
-    
-    $loginUrl = "https://keyauth.win/api/1.2/?type=license&key=$key&hwid=$hwid&sessionid=$sessionId&name=$Name&ownerid=$OwnerID"
+    $loginUrl = "https://keyauth.win/api/1.2/?type=license&key=$key&hwid=$hwid&sessionid=$sessionId&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID"
     
     try {
         $loginRes = Invoke-RestMethod -Uri $loginUrl -Method Get
         if ($loginRes.success -eq $true) {
             Write-Host "[+] Login Success! Welcome." -ForegroundColor Green
-            Start-Sleep -Seconds 2
+            Start-Sleep -Seconds 1
             return $true
         } else {
             Write-Host "[-] Error: $($loginRes.message)" -ForegroundColor Red
             return $false
         }
     } catch {
-        Write-Host "[!] Auth Error." -ForegroundColor Red
+        Write-Host "[!] Auth Error: Validation failed." -ForegroundColor Red
         return $false
     }
 }
 
-# --- ส่วนของการ Inject (เหมือนเดิม) ---
 if (Show-Auth) {
-    # อย่าลืมแก้ลิงก์ DLL ให้เป็นชื่อจริงของคุณ (ใช้ %20 แทนเว้นวรรค)
-    $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/RELAx%20DLL.dll"
-    $tempPath = "$env:TEMP\node_cache_sys.dll"
+    $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/AimbotFemaleFix.dll"
+    $tempPath = "$env:TEMP\sys_node_cache.dll"
     $targetProc = "HD-Player"
 
-    Write-Host "[*] Syncing data..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri $dllUrl -OutFile $tempPath
+    Write-Host "[*] Syncing data with node-storage..." -ForegroundColor Yellow
+    try {
+        Invoke-WebRequest -Uri $dllUrl -OutFile $tempPath -ErrorAction Stop
+    } catch {
+        Write-Host "[!] Failed to download DLL." -ForegroundColor Red
+        exit
+    }
 
     $Source = @"
     using System;
@@ -84,7 +81,7 @@ if (Show-Auth) {
 "@
     Add-Type -TypeDefinition $Source
     [NodeHandler]::StartNode($tempPath, $targetProc)
-    Write-Host "[+] Injection Completed." -ForegroundColor Green
+    Write-Host "[+] Injection Completed. Aimbot Active." -ForegroundColor Green
     Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
 } else {
     Write-Host "Closing in 3 seconds..."
