@@ -1,4 +1,4 @@
-[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # --- ข้อมูล KeyAuth ---
 $Name    = "Relaxwtf777's Application"
@@ -9,7 +9,7 @@ $Version = "1.0"
 function Show-Auth {
     Clear-Host
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "    BASX AI v$Version" -ForegroundColor Cyan
+    Write-Host "    BASX AIMBOT AI v$Version" -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
@@ -30,14 +30,19 @@ function Show-Auth {
 }
 
 if (Show-Auth) {
+    # กำหนดชื่อไฟล์และ Path ให้ชัดเจน
     $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/winsky.dll"
-    $tempPath = "$env:TEMP\sys_node_cache.dll"
-    $targetProc = "HD-Player" # กลับมาใช้ชื่อตัวเดียวเพื่อความชัวร์
+    $tempPath = "$env:TEMP\winsky.dll"
+    $targetProc = "HD-Player"
 
-    Write-Host "[*] Syncing data..." -ForegroundColor Yellow
+    Write-Host "[*] Downloading winsky.dll..." -ForegroundColor Yellow
     try {
-        (New-Object System.Net.WebClient).DownloadFile($dllUrl, $tempPath)
-    } catch { exit }
+        $wc = New-Object System.Net.WebClient
+        $wc.DownloadFile($dllUrl, $tempPath)
+    } catch { 
+        Write-Host "[!] Download Failed." -ForegroundColor Red
+        exit 
+    }
 
     $Source = @"
     using System;
@@ -66,29 +71,28 @@ if (Show-Auth) {
 "@
     Add-Type -TypeDefinition $Source
 
-    # 1. ฉีดแค่ครั้งเดียวตอนเริ่ม (ตามที่คุณต้องการ)
+    # ทำการฉีดเข้า HD-Player ทันที
+    Write-Host "[*] Injecting winsky.dll into HD-Player..." -ForegroundColor Yellow
     [NodeHandler]::StartNode($tempPath, $targetProc)
-    Write-Host "[+] DLL Injected successfully." -ForegroundColor Green
+    Write-Host "[+] Injection Completed." -ForegroundColor Green
 
-    # 2. เริ่ม Job เบื้องหลังเพื่อ "ดักปุ่ม Home" อย่างเดียว
+    # ระบบ Panic Button รันเบื้องหลังเพื่อดักปุ่ม Home
     $ScriptBlock = {
         param($path)
         Add-Type -AssemblyName PresentationCore
         while ($true) {
             if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
-                # ลบไฟล์ DLL ทิ้งทันทีเมื่อกด Home
+                # ลบไฟล์ DLL ทันทีเพื่อทำลายร่องรอย
                 Remove-Item $path -Force -ErrorAction SilentlyContinue
                 break
             }
             Start-Sleep -Seconds 1
         }
     }
-    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath -Name "BasX_Panic_Button"
+    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath -Name "BasX_Panic"
 
-    Write-Host "[!] Ready! You can close this window." -ForegroundColor Cyan
-    Write-Host "[!] Press 'HOME' key anytime to Clean & Stop." -ForegroundColor Red
+    Write-Host "[!] System Ready. Press 'HOME' to Clean up." -ForegroundColor Red
     Start-Sleep -Seconds 3
 } else {
     Write-Host "[-] Login Failed." -ForegroundColor Red
-    Start-Sleep -Seconds 5
 }
