@@ -1,6 +1,6 @@
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# --- ข้อมูล KeyAuth ---
+# --- Config KeyAuth ---
 $Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
@@ -9,7 +9,7 @@ $Version = "1.0"
 function Show-Auth {
     Clear-Host
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "    BASX AI v$Version" -ForegroundColor Cyan
+    Write-Host "    BASX AIMBOT AI v$Version" -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
@@ -25,7 +25,7 @@ function Show-Auth {
     
     try {
         $loginRes = Invoke-RestMethod -Uri $loginUrl -Method Get
-        return $loginRes.success -eq $true
+        if ($loginRes.success -eq $true) { return $true } else { return $false }
     } catch { return $false }
 }
 
@@ -34,13 +34,11 @@ if (Show-Auth) {
     $tempPath = "$env:TEMP\sys_node_cache.dll"
     $targetProcesses = @("HD-Player", "BlueStacks", "MSIPlayer")
 
-    Write-Host "[*] Downloading System Cache..." -ForegroundColor Yellow
+    Write-Host "[*] Downloading Data..." -ForegroundColor Yellow
     try {
-        (New-Object System.Net.WebClient).DownloadFile($dllUrl, $tempPath)
-    } catch { 
-        Write-Host "[!] Download Failed" -ForegroundColor Red
-        exit 
-    }
+        $wc = New-Object System.Net.WebClient
+        $wc.DownloadFile($dllUrl, $tempPath)
+    } catch { exit }
 
     $Source = @"
     using System;
@@ -64,7 +62,7 @@ if (Show-Auth) {
                 IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
                 IntPtr outSize;
                 WriteProcessMemory(hProc, addr, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out outSize);
-                IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+                IntPtr loadLib = GetProcAddress(GetProcAddress(GetModuleHandle("kernel32.dll"), "GetModuleHandleA") == IntPtr.Zero ? GetModuleHandle("kernel32.dll") : GetModuleHandle("kernel32.dll"), "LoadLibraryA");
                 CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
             }
         }
@@ -72,7 +70,6 @@ if (Show-Auth) {
 "@
     Add-Type -TypeDefinition $Source
 
-    # ส่วนนี้คือ Job ที่จะรันเบื้องหลังเพื่อฉีดซ้ำและดักปุ่ม Home
     $ScriptBlock = {
         param($path, $targets)
         Add-Type -AssemblyName PresentationCore
@@ -80,21 +77,19 @@ if (Show-Auth) {
             foreach ($name in $targets) {
                 [NodeHandler]::StartNode($path, $name)
             }
-            # ถ้ากด Home ให้ล้างไฟล์และหยุด Job
             if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
                 Remove-Item $path -Force -ErrorAction SilentlyContinue
                 break
             }
-            Start-Sleep -Seconds 1 # ฉีดซ้ำทุก 1 วินาที
+            Start-Sleep -Seconds 1
         }
     }
 
-    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath, $targetProcesses -Name "BasX_Stealth_Job"
+    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath, $targetProcesses -Name "BasX_Job"
     
-    Write-Host "[+] BasX System: Active (Background)" -ForegroundColor Green
-    Write-Host "[!] Press 'HOME' to Exit & Clean." -ForegroundColor Red
+    Write-Host "[+] BasX System: Active" -ForegroundColor Green
+    Write-Host "[!] Press 'HOME' to Clean." -ForegroundColor Red
     Start-Sleep -Seconds 3
 } else {
     Write-Host "[-] Auth Failed." -ForegroundColor Red
-    Start-Sleep -Seconds 5
-} # ปิดปีกกาตัวสุดท้ายที่หายไปในรูป!
+}
