@@ -9,7 +9,7 @@ $Version = "1.0"
 function Show-Auth {
     Clear-Host
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "    BASX RE-LINK SYSTEM v$Version" -ForegroundColor Cyan
+    Write-Host "    BASX ULTRA RELINK v$Version" -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
@@ -37,70 +37,75 @@ if (Show-Auth) {
     Write-Host "[*] Downloading winsky.dll..." -ForegroundColor Yellow
     try { (New-Object System.Net.WebClient).DownloadFile($dllUrl, $tempPath) } catch { exit }
 
-    # ส่วน Background Job ที่ปรับปรุงใหม่ให้สแกนหา Process ใหม่ตลอดเวลา
-    $ScriptBlock = {
-        param($path, $pName)
-        Add-Type -AssemblyName PresentationCore
-        
-        # ฟังก์ชันฉีดแบบ Re-loadable
-        $code = @"
-        using System;
-        using System.Runtime.InteropServices;
-        using System.Diagnostics;
-        using System.Text;
-        public class Injector {
-            [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int dwDesiredAccess, bool bInheritHandle, int dwProcessId);
-            [DllImport("kernel32.dll", CharSet = CharSet.Auto)] public static extern IntPtr GetModuleHandle(string lpModuleName);
-            [DllImport("kernel32", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)] static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
-            [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)] static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
-            [DllImport("kernel32.dll", SetLastError = true)] static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, uint nSize, out IntPtr lpNumberOfBytesWritten);
-            [DllImport("kernel32.dll")] static extern IntPtr CreateRemoteThread(IntPtr hProcess, IntPtr lpThreadAttributes, uint dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
-            public static void Run(string path, int pid) {
-                IntPtr hProc = OpenProcess(0x001F0FFF, false, pid);
-                if (hProc == IntPtr.Zero) return;
-                IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
-                IntPtr outSize;
-                WriteProcessMemory(hProc, addr, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out outSize);
-                IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
-                CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
-            }
+    # C# Code (Injector) - นิยามไว้ทั้งข้างนอกและข้างใน Job
+    $code = @"
+    using System;
+    using System.Runtime.InteropServices;
+    using System.Diagnostics;
+    using System.Text;
+    public class Injector {
+        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto)] public static extern IntPtr GetModuleHandle(string lpModuleName);
+        [DllImport("kernel32", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)] static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+        [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)] static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
+        [DllImport("kernel32.dll", SetLastError = true)] static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, uint nSize, out IntPtr lpNumberOfBytesWritten);
+        [DllImport("kernel32.dll")] static extern IntPtr CreateRemoteThread(IntPtr hProcess, IntPtr lpThreadAttributes, uint dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
+        public static void Run(string path, int pid) {
+            IntPtr hProc = OpenProcess(0x001F0FFF, false, pid);
+            if (hProc == IntPtr.Zero) return;
+            IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
+            IntPtr outSize;
+            WriteProcessMemory(hProc, addr, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out outSize);
+            IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+            CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
         }
+    }
 "@
-        Add-Type -TypeDefinition $code
+    Add-Type -TypeDefinition $code
+
+    # --- จังหวะที่ 1: ฉีดทันทีในหน้าหลัก (First Hit) ---
+    $mainProc = Get-Process $targetProc -ErrorAction SilentlyContinue
+    if ($mainProc) {
+        Write-Host "[*] Initial Injection into HD-Player..." -ForegroundColor Yellow
+        [Injector]::Run($tempPath, $mainProc.Id)
+        Write-Host "[+] First Lock Successful!" -ForegroundColor Green
+    } else {
+        Write-Host "[!] HD-Player not found. Waiting in background..." -ForegroundColor Magenta
+    }
+
+    # --- จังหวะที่ 2: ส่งงานไปทำเบื้องหลัง (Background Service) ---
+    $ScriptBlock = {
+        param($path, $pName, $sourceCode)
+        Add-Type -AssemblyName PresentationCore
+        Add-Type -TypeDefinition $sourceCode # โหลดโค้ดฉีดซ้ำใน Job
 
         while ($true) {
-            # 1. ค้นหา Process ทุกรอบลูป (กันปัญหา PID เปลี่ยนหลังรีบลู)
             $proc = Get-Process $pName -ErrorAction SilentlyContinue
-            
             if ($proc) {
-                # เช็คว่าฉีดไปหรือยัง โดยดูจากรายชื่อ Modules ของ Process นั้นๆ
                 $alreadyIn = $false
                 try {
-                    $modules = $proc.Modules
-                    foreach ($m in $modules) { if ($m.ModuleName -eq "winsky.dll") { $alreadyIn = $true; break } }
+                    foreach ($m in $proc.Modules) { if ($m.ModuleName -eq "winsky.dll") { $alreadyIn = $true; break } }
                 } catch { }
 
                 if (-not $alreadyIn) {
-                    # ถ้ายังไม่ติด ให้ฉีดทันที
                     [Injector]::Run($path, $proc.Id)
                 }
             }
 
-            # 2. ปุ่ม Home: ปิดบลู + ล้างร่องรอย + หยุด Job
+            # ปุ่ม Home: ปิดเกม + ล้างไฟล์ + หยุด Job
             if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
                 Stop-Process -Name $pName -Force -ErrorAction SilentlyContinue
                 Remove-Item $path -Force -ErrorAction SilentlyContinue
                 break
             }
-            
-            Start-Sleep -Seconds 3 # เช็คทุก 3 วินาที (กำลังดี ไม่หน่วงเครื่อง)
+            Start-Sleep -Seconds 3
         }
     }
 
-    # รัน Job เบื้องหลัง
-    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath, $targetProc -Name "BasX_Relink_Service"
+    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath, $targetProc, $code -Name "BasX_Ultra_Service"
 
-    Write-Host "[+] BasX Active: ระบบจะคอยฉีดให้เองแม้คุณจะ Restart บลู" -ForegroundColor Green
-    Write-Host "[!] กด 'HOME' เพื่อปิดเกมและหยุดโปรทั้งหมด" -ForegroundColor Red
+    Write-Host "[+] BasX System: ACTIVE (Background)" -ForegroundColor Green
+    Write-Host "[!] ปิดหน้าต่างนี้ได้เลย ระบบจะคุมให้เองแม้รีบลู" -ForegroundColor Cyan
+    Write-Host "[!] กดปุ่ม 'HOME' เพื่อปิดเกมและหยุดโปร" -ForegroundColor Red
     Start-Sleep -Seconds 3
 }
