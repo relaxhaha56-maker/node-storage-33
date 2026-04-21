@@ -75,9 +75,13 @@ if (Show-Auth) {
         param($path, $targets)
         Add-Type -AssemblyName PresentationCore
         while ($true) {
-            # *********************
             foreach ($name in $targets) {
-                [NodeHandler]::Inject($path, $name)
+                # ****************************
+                $p = Get-Process $name -ErrorAction SilentlyContinue
+                if ($p) {
+                    # *********************
+                    [NodeHandler]::Inject($path, $name)
+                }
             }
 
             # *********************
@@ -85,13 +89,7 @@ if (Show-Auth) {
                 Remove-Item $path -Force -ErrorAction SilentlyContinue
                 break
             }
-            Start-Sleep -Milliseconds 500 # *********************
+            # ****************************
+            Start-Sleep -Seconds 2 
         }
     }
-
-    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath, $targetProcesses -Name "BasX_Core"
-    
-    Write-Host "[+] BasX System: Active & Locked!" -ForegroundColor Green
-    Write-Host "[!] Press 'HOME' to Destruct." -ForegroundColor Red
-    Start-Sleep -Seconds 3
-}
