@@ -46,32 +46,56 @@ if (Show-Auth -savedKey $currentKey) {
         Copy-Item $tempDll -Destination $hiddenDll -Force -ErrorAction SilentlyContinue
     }
 
-    # สร้างไฟล์ Service (ใช้ Code ที่สั้นและคลีนที่สุด)
-    $serviceContent = @"
-Add-Type -TypeDefinition "using System; using System.Runtime.InteropServices; using System.Text; public class NodeGuard { [DllImport(`"kernel32.dll`")] public static extern IntPtr OpenProcess(int d, bool b, int p); [DllImport(`"kernel32.dll`")] public static extern IntPtr GetModuleHandle(string n); [DllImport(`"kernel32.dll`")] public static extern IntPtr GetProcAddress(IntPtr h, string p); [DllImport(`"kernel32.dll`")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr); [DllImport(`"kernel32.dll`")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w); [DllImport(`"kernel32.dll`")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id); public static void Run(string p, int i) { IntPtr h = OpenProcess(0x1F0FFF, false, i); if (h == IntPtr.Zero) return; IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)p.Length + 1, 0x3000, 0x40); IntPtr w; WriteProcessMemory(h, a, Encoding.Default.GetBytes(p), (uint)p.Length + 1, out w); IntPtr l = GetProcAddress(GetModuleHandle(`"kernel32.dll`"), `"LoadLibraryA`" ); CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero); } }"
-while (`$true) {
-    `$p = Get-Process "$targetProc" -ErrorAction SilentlyContinue
-    if (`$p) { [NodeGuard]::Run("$hiddenDll", `$p.Id) }
-    Add-Type -AssemblyName PresentationCore
-    if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
-        Stop-Process -Name "$targetProc" -Force -ErrorAction SilentlyContinue
-        Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -ErrorAction SilentlyContinue
-        Remove-Item "$dirPath" -Recurse -Force -ErrorAction SilentlyContinue
-        exit
+    # C# Code สำหรับฉีด DLL
+    $injectCode = @"
+    using System; using System.Runtime.InteropServices; using System.Text;
+    public class NodeGuard {
+        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int d, bool b, int p);
+        [DllImport("kernel32.dll")] public static extern IntPtr GetModuleHandle(string n);
+        [DllImport("kernel32.dll")] public static extern IntPtr GetProcAddress(IntPtr h, string p);
+        [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
+        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
+        [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
+        public static void Run(string p, int i) {
+            IntPtr h = OpenProcess(0x1F0FFF, false, i);
+            if (h == IntPtr.Zero) return;
+            IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)p.Length + 1, 0x3000, 0x40);
+            IntPtr w;
+            WriteProcessMemory(h, a, Encoding.Default.GetBytes(p), (uint)p.Length + 1, out w);
+            IntPtr l = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+            CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero);
+        }
     }
-    Start-Sleep -Seconds 10
-}
 "@
-    $serviceContent | Out-File $scriptPath -Force
+    Add-Type -TypeDefinition $injectCode
 
-    # --- วิธีใหม่: ใช้ Registry รัน PowerShell โดยตรง (ไม่ต้องผ่าน VBS) ---
-    $runCmd = "powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
-    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -Value $runCmd
+    # --- ส่วนการฉีดครั้งเดียวจบ ---
+    $p = Get-Process "$targetProc" -ErrorAction SilentlyContinue
+    if ($p) {
+        [NodeGuard]::Run("$hiddenDll", $p.Id)
+        Write-Host "[+] Injected Successfully!" -ForegroundColor Green
+    } else {
+        Write-Host "[!] $targetProc not found! Please open game first." -ForegroundColor Yellow
+    }
 
-    # สั่งเริ่มทำงานทันทีแบบซ่อนหน้าต่าง
+    # --- ส่วนของปุ่ม Panic Button (รันรอไว้เบื้องหลัง) ---
+    $panicScript = @"
+    while (`$true) {
+        Add-Type -AssemblyName PresentationCore
+        if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
+            Stop-Process -Name "$targetProc" -Force -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -ErrorAction SilentlyContinue
+            Remove-Item "$dirPath" -Recurse -Force -ErrorAction SilentlyContinue
+            exit
+        }
+        Start-Sleep -Milliseconds 500
+    }
+"@
+    $panicScript | Out-File $scriptPath -Force
+
+    # สั่งรันตัวดักปุ่ม Home แบบซ่อนหน้าต่าง
     Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
     
-    Write-Host "[+] Stealth System Active (VBS Removed)" -ForegroundColor Cyan
-    Write-Host "[!] HOME KEY: Close Game & Full Cleanup" -ForegroundColor Red
-    Start-Sleep -Seconds 2
+    Write-Host "[*] Manual Mode Active: Auto-Loop Removed." -ForegroundColor Cyan
+    Write-Host "[!] Press 'HOME' anytime to Cleanup." -ForegroundColor Red
 }
