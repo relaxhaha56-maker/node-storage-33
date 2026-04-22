@@ -10,6 +10,7 @@ $dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
 $configPath = "$dirPath\auth.dat"
 $scriptPath = "$dirPath\service.ps1"
 $targetDll  = "$env:TEMP\f8.dll"
+$hackerExe  = "$env:TEMP\Activate.exe"
 $targetProc = "HD-Player"
 
 function Show-Auth {
@@ -40,51 +41,20 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success" -ForegroundColor Green
 
-    # โค้ดฉีดระดับ Pro ที่ใช้ LoadLibraryA แบบตรงไปตรงมาที่สุด (เลียนแบบ Process Hacker GUI)
-    $code = @"
-    using System;
-    using System.Runtime.InteropServices;
-    using System.Text;
-    public class Injector {
-        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint a, bool b, int p);
-        [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
-        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
-        [DllImport("kernel32.dll")] public static extern IntPtr GetModuleHandle(string n);
-        [DllImport("kernel32.dll")] public static extern IntPtr GetProcAddress(IntPtr h, string p);
-        [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
+    if ((Test-Path $hackerExe) -and (Test-Path $targetDll)) {
+        Write-Host "[*] Opening Activate.exe for Manual Injection..." -ForegroundColor Cyan
+        Write-Host "[!] ขั้นตอน: คลิกขวาที่ HD-Player > Miscellaneous > Inject DLL > เลือก f8.dll ใน Temp" -ForegroundColor Yellow
         
-        public static bool Run(string dllPath, int pid) {
-            IntPtr hProc = OpenProcess(0x001F0FFF, false, pid);
-            if (hProc == IntPtr.Zero) return false;
-            
-            IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)dllPath.Length + 1, 0x3000, 0x40);
-            if (addr == IntPtr.Zero) return false;
-            
-            byte[] bytes = Encoding.ASCII.GetBytes(dllPath);
-            IntPtr w;
-            if (!WriteProcessMemory(hProc, addr, bytes, (uint)bytes.Length + 1, out w)) return false;
-            
-            IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
-            IntPtr hThread = CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
-            return hThread != IntPtr.Zero;
-        }
-    }
-"@
-    Add-Type -TypeDefinition $code
+        # รัน Activate.exe (Process Hacker) ขึ้นมาแบบมีสิทธิ์ Admin เพื่อให้ Driver ทำงาน
+        Start-Process -FilePath $hackerExe -Verb RunAs
 
-    # --- เริ่มการฉีด ---
-    $p = Get-Process $targetProc -ErrorAction SilentlyContinue
-    if ($p -and (Test-Path $targetDll)) {
-        Write-Host "[*] Launching Internal Injector..." -ForegroundColor Cyan
-        $success = [Injector]::Run($targetDll, $p.Id)
+        # รอให้คุณฉีดเสร็จ (กด Enter เมื่อฉีดเสร็จแล้ว)
+        Read-Host " หลังจากฉีดเสร็จและล็อคติดแล้ว ให้กด Enter เพื่อลบไฟล์ร่องรอย"
         
-        if ($success) {
-            Write-Host "[+] Injection Success! Wiping f8.dll..." -ForegroundColor Green
-            Start-Sleep -Seconds 3 # รอให้ DLL ทำงานก่อนลบ
-            Remove-Item $targetDll -Force -ErrorAction SilentlyContinue
-        } else {
-            Write-Host "[-] Injection Failed. Please Run as Admin." -ForegroundColor Red
-        }
+        # --- ทำลายหลักฐานหลังใช้งาน ---
+        Remove-Item $targetDll -Force -ErrorAction SilentlyContinue
+        # ไม่ลบ Activate.exe ทันทีเพราะโปรแกรมอาจยังเปิดอยู่
+        Write-Host "[+] Traces Cleaned." -ForegroundColor Green
     }
 
     # --- Panic Button (Home) ---
@@ -93,6 +63,7 @@ if (Show-Auth -savedKey $currentKey) {
         Add-Type -AssemblyName PresentationCore
         if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
             Stop-Process -Name "$targetProc" -Force -ErrorAction SilentlyContinue
+            Stop-Process -Name "Activate" -Force -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -ErrorAction SilentlyContinue
             Remove-Item "$dirPath" -Recurse -Force -ErrorAction SilentlyContinue
             exit
