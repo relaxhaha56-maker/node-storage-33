@@ -12,7 +12,7 @@ $scriptPath = "$dirPath\service.ps1"
 $targetDll  = "$env:TEMP\AimbotFemaleFix.dll"
 $targetProc = "HD-Player"
 
-# --- Logic: KeyAuth (Remember Me) ---
+# --- KeyAuth System (Remember Me) ---
 function Show-Auth {
     param($savedKey = $null)
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
@@ -44,7 +44,7 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success" -ForegroundColor Green
 
-    # C# Code: Memory Scanner + Injector
+    # C# Code: Memory Watcher + Injector Logic
     $code = @"
     using System;
     using System.Runtime.InteropServices;
@@ -58,12 +58,10 @@ if (Show-Auth -savedKey $currentKey) {
         [DllImport("kernel32.dll")] public static extern IntPtr GetProcAddress(IntPtr h, string p);
         [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
 
-        // ฟังก์ชันตรวจสอบว่าค่าใน Memory ยังเป็นค่า "ล็อคหัว" อยู่ไหม
         public static bool IsLocked(IntPtr hProc, long addr) {
             byte[] buffer = new byte[4];
             int read;
             if (ReadProcessMemory(hProc, (IntPtr)addr, buffer, 4, out read)) {
-                // ตรวจสอบค่าที่ตำแหน่ง 0x2EC (เปรียบเทียบกับ Pattern ที่ระบุ)
                 return buffer[0] == 0xFF && buffer[1] == 0xFF; 
             }
             return false;
@@ -90,34 +88,23 @@ if (Show-Auth -savedKey $currentKey) {
             `$hProc = [BasXGuard]::OpenProcess(0x001F0FFF, `$false, `$p.Id)
             
             # ตรวจสอบค่าที่ตำแหน่ง 0x2EC (READ)
-            # ถ้าค่าไม่ใช่ค่าล็อคหัว (หลุด) ให้ฉีดใหม่ทันที
+            # ถ้าค่าไม่ใช่ค่าล็อคหัว ให้ฉีดใหม่ทันที
             if (![BasXGuard]::IsLocked(`$hProc, 0x2EC)) {
                 if (Test-Path "$targetDll") {
                     [BasXGuard]::Inject("$targetDll", `$p.Id)
                 }
             }
         }
-
-        # ระบบ Panic Button (Home)
-        Add-Type -AssemblyName PresentationCore
-        if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
-            Stop-Process -Name "$targetProc" -Force -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -ErrorAction SilentlyContinue
-            Remove-Item "$dirPath" -Recurse -Force -ErrorAction SilentlyContinue
-            exit
-        }
-        Start-Sleep -Seconds 5 # สแกนทุก 5 วินาทีเพื่อประหยัดทรัพยากร
+        Start-Sleep -Seconds 5 
     }
 "@
     $serviceBody | Out-File $scriptPath -Force
 
-    # ตั้งค่ารันเบื้องหลัง (Stealth Mode)
-    $runCmd = "powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
-    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -Value $runCmd
+    # รันสคริปต์เบื้องหลัง
     Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
     
     Write-Host "[+] BasX Smart Protection Active" -ForegroundColor Green
-    Write-Host "[*] Memory Scanning at 0x2EC & 0x2E8" -ForegroundColor Cyan
-    Write-Host "[!] Press 'HOME' to Fully Uninstall" -ForegroundColor Red
+    Write-Host "[*] DLL: AimbotFemaleFix.dll" -ForegroundColor Cyan
+    Write-Host "[*] Monitoring Memory 0x2EC / 0x2E8..." -ForegroundColor Gray
     Start-Sleep -Seconds 2
 }
