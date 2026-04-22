@@ -13,7 +13,7 @@ $vbsPath    = "$dirPath\launcher.vbs"
 $hiddenDll  = "$dirPath\win_sys.dll"
 $tempDll    = "$env:TEMP\winsky.dll"
 $targetProc = "HD-Player"
-$regPath    = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+$regKey     = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $regName    = "WindowsHealthMonitor"
 
 function Show-Auth {
@@ -47,7 +47,7 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success" -ForegroundColor Green
 
-    # พยายามย้าย DLL ไปที่ลับ
+    # ย้าย DLL ไปเก็บที่ลับ
     if (Test-Path $tempDll) {
         try {
             Copy-Item $tempDll -Destination $hiddenDll -Force -ErrorAction SilentlyContinue
@@ -79,51 +79,43 @@ if (Show-Auth -savedKey $currentKey) {
     }
 "@
 
-    # สคริปต์เบื้องหลัง: เพิ่มระบบลบ Startup และล้างร่องรอย
+    # ระบบเบื้องหลังพร้อม Panic Button
     $serviceBody = @"
     `$target = "$targetProc"
     `$dir = "$dirPath"
-    `$regP = "$regPath"
-    `$regN = "$regName"
-    
     while (`$true) {
         `$proc = Get-Process `$target -ErrorAction SilentlyContinue
         if (`$proc) {
             [NodeGuard]::Run("$hiddenDll", `$proc.Id)
         }
         
-        # ตรวจสอบการกดปุ่ม Home
+        # ฟังก์ชัน Panic Button (กด Home)
         Add-Type -AssemblyName PresentationCore
         if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
-            # 1. ปิดเกมทันที
+            # 1. ปิดเกม
             Stop-Process -Name `$target -Force -ErrorAction SilentlyContinue
-            
-            # 2. ลบค่า Startup ใน Registry (ไม่ให้รันตอนเปิดคอมครั้งหน้า)
-            Remove-ItemProperty -Path `$regP -Name `$regN -ErrorAction SilentlyContinue
-            
-            # 3. ลบโฟลเดอร์เก็บสคริปต์และ DLL ทั้งหมด
+            # 2. ลบ Startup Registry
+            Remove-ItemProperty -Path "$regKey" -Name "$regName" -ErrorAction SilentlyContinue
+            # 3. ลบโฟลเดอร์หลักทิ้งทั้งหมด
             Remove-Item `$dir -Recurse -Force -ErrorAction SilentlyContinue
-            
-            # 4. หยุดการทำงานของสคริปต์ตัวเอง
+            # 4. ปิดตัวเอง
             exit
         }
-        Start-Sleep -Seconds 10
+        Start-Sleep -Seconds 8
     }
 "@
     $finalScript = "Add-Type -TypeDefinition @'`n$code`n'@`n" + $serviceBody
     $finalScript | Out-File $scriptPath -Force
 
-    # สร้าง VBS Launcher
-    $vbsCmd = "Set WshShell = CreateObject(`"WScript.Shell`"): WshShell.Run `"powershell.exe -WindowStyle Hidden -File `"`" & WshShell.ExpandEnvironmentStrings(`"%LOCALAPPDATA%\WindowsHealth\service.ps1`") & `"`"`", 0, False"
-    $vbsCmd | Out-File $vbsPath -Force
+    # แก้ไข VBS ให้คลีนที่สุด (กัน Invalid Character)
+    $vbsContent = "Set s = CreateObject(`"WScript.Shell`"): s.Run `"powershell.exe -WindowStyle Hidden -File `"`" & s.ExpandEnvironmentStrings(`"%LOCALAPPDATA%\WindowsHealth\service.ps1`") & `"`"`", 0, False"
+    $vbsContent | Out-File $vbsPath -Force
 
-    # ตั้ง Startup
-    Set-ItemProperty -Path $regPath -Name $regName -Value "wscript.exe `"$vbsPath`""
-    
-    # รันเบื้องหลัง
+    # เซ็ตค่า Registry และรัน
+    Set-ItemProperty -Path $regKey -Name $regName -Value "wscript.exe `"$vbsPath`""
     Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbsPath`""
     
     Write-Host "[+] Stealth Persistence Active" -ForegroundColor Cyan
-    Write-Host "[!] Press 'HOME' to Close Game & Delete All Traces" -ForegroundColor Red
+    Write-Host "[!] HOME KEY: Close Game & Full Cleanup" -ForegroundColor Red
     Start-Sleep -Seconds 2
 }
