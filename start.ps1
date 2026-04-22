@@ -1,8 +1,7 @@
-# ตั้งค่า Encoding ให้แสดงภาษาไทยได้ถูกต้อง
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# --- ข้อมูล KeyAuth ---
+# --- KeyAuth Configuration ---
 $Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
@@ -10,8 +9,6 @@ $Version = "1.0"
 
 $dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
 $configPath = "$dirPath\auth.dat"
-$targetDll  = "$dirPath\AimbotFemaleFix.dll"
-# ลองเปลี่ยน Link เป็นแบบ Raw direct
 $dllUrl     = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/main/winsky.dll"
 $targetProc = "HD-Player"
 
@@ -19,19 +16,18 @@ function Show-Auth {
     param($savedKey = $null)
     Clear-Host
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "     BASX AIMBOT SYSTEM test      " -ForegroundColor Cyan
+    Write-Host "    BASX ADVANCED INJECTOR    " -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
     try {
         $initRes = Invoke-RestMethod -Uri $initUrl -Method Get
-        if ($initRes.success -ne $true) { return $null }
         $sessionId = $initRes.sessionid
     } catch { return $null }
 
     if ($null -ne $savedKey) { 
         $key = $savedKey 
-        Write-Host "[*] ตรวจพบ License Key เดิม..." -ForegroundColor Gray
+        Write-Host "[*] Using saved license key..." -ForegroundColor Gray
     } else { 
         $key = Read-Host " Enter License Key" 
     }
@@ -56,52 +52,54 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success!" -ForegroundColor Green
 
-    # --- ระบบดาวน์โหลดแบบ Force Check ---
-    if (!(Test-Path $targetDll)) {
-        Write-Host "[*] กำลังดึงไฟล์จาก Server..." -ForegroundColor Yellow
-        try {
-            $webClient = New-Object System.Net.WebClient
-            $webClient.Headers.Add("user-agent", "Mozilla/5.0")
-            $webClient.DownloadFile($dllUrl, $targetDll)
-            Write-Host "[+] ดาวน์โหลดคอมโพเนนต์สำเร็จ" -ForegroundColor Green
-        } catch { 
-            Write-Host "[!] ดาวน์โหลดล้มเหลว: ลิงก์ GitHub อาจเสียหรือไฟล์ถูกลบ" -ForegroundColor Red
-            Write-Host "[*] วิธีแก้: ลองเอาไฟล์ AimbotFemaleFix.dll ไปวางไว้ที่: $dirPath เองครับ" -ForegroundColor Yellow
-            exit 
-        }
-    }
-
     $Source = @"
     using System;
     using System.Runtime.InteropServices;
     using System.Diagnostics;
     using System.Text;
-    public class NodeHandler {
+    using System.Net;
+    using System.IO;
+
+    public class MemoryNode {
         [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int dw, bool b, int p);
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto)] public static extern IntPtr GetModuleHandle(string lp);
-        [DllImport("kernel32", CharSet = CharSet.Ansi)] public static extern IntPtr GetProcAddress(IntPtr h, string p);
         [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
         [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
-        [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] b, int s, out int r);
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto)] public static extern IntPtr GetModuleHandle(string lp);
+        [DllImport("kernel32", CharSet = CharSet.Ansi)] public static extern IntPtr GetProcAddress(IntPtr h, string p);
         [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
-        
-        public static void StartNode(string path, int pid) {
-            IntPtr h = OpenProcess(0x001F0FFF, false, pid);
-            if (h == IntPtr.Zero) return;
-            IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
-            IntPtr w;
-            WriteProcessMemory(h, a, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out w);
-            IntPtr l = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
-            CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero);
+        [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] b, int s, out int r);
+
+        public static void StreamInject(string url, int pid) {
+            try {
+                WebClient wc = new WebClient();
+                wc.Headers.Add("User-Agent", "Mozilla/5.0");
+                byte[] dllBytes = wc.DownloadData(url);
+
+                IntPtr hProc = OpenProcess(0x001F0FFF, false, pid);
+                if (hProc == IntPtr.Zero) return;
+
+                string tempFile = Path.Combine(Path.GetTempPath(), "idx_" + Guid.NewGuid().ToString().Substring(0,8) + ".tmp");
+                File.WriteAllBytes(tempFile, dllBytes);
+
+                IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)tempFile.Length + 1, 0x3000, 0x40);
+                IntPtr w;
+                WriteProcessMemory(hProc, addr, Encoding.Default.GetBytes(tempFile), (uint)tempFile.Length + 1, out w);
+                
+                IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+                CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
+
+                System.Threading.Thread.Sleep(1500);
+                if (File.Exists(tempFile)) File.Delete(tempFile);
+            } catch { }
         }
 
-        public static bool CheckMemory(int pid, long addr) {
-            IntPtr h = OpenProcess(0x001F0FFF, false, pid);
-            if (h == IntPtr.Zero) return true;
-            byte[] b = new byte[4];
-            int r;
-            if (ReadProcessMemory(h, (IntPtr)addr, b, 4, out r)) {
-                return b[0] == 0xFF && b[1] == 0xFF;
+        public static bool IsPatternLocked(int pid, long address) {
+            IntPtr hProc = OpenProcess(0x001F0FFF, false, pid);
+            if (hProc == IntPtr.Zero) return true;
+            byte[] buffer = new byte[4];
+            int read;
+            if (ReadProcessMemory(hProc, (IntPtr)address, buffer, 4, out read)) {
+                return buffer[0] == 0xFF && buffer[1] == 0xFF;
             }
             return false;
         }
@@ -109,18 +107,19 @@ if (Show-Auth -savedKey $currentKey) {
 "@
     Add-Type -TypeDefinition $Source
 
-    Write-Host "[*] ระบบเริ่มเฝ้าตรวจจับ HD-Player..." -ForegroundColor Cyan
+    Write-Host "[*] Monitoring process: $targetProc" -ForegroundColor Cyan
     while ($true) {
         $p = Get-Process $targetProc -ErrorAction SilentlyContinue
         if ($p) {
-            # ตรวจสอบค่าที่ 0x2EC
-            if (![NodeHandler]::CheckMemory($p.Id, 0x2EC)) {
-                if (Test-Path $targetDll) {
-                    [NodeHandler]::StartNode($targetDll, $p.Id)
-                    Write-Host "[+] $(Get-Date -Format 'HH:mm:ss') - โปรหลุด! ทำการฉีดใหม่ให้แล้ว" -ForegroundColor Green
-                }
+            # Check Memory Address 0x2EC
+            if (![MemoryNode]::IsPatternLocked($p.Id, 0x2EC)) {
+                Write-Host "[*] Pattern mismatch detected. Re-injecting..." -ForegroundColor Yellow
+                [MemoryNode]::StreamInject($dllUrl, $p.Id)
+                Write-Host "[+] $(Get-Date -Format 'HH:mm:ss') - Stream Injection Successful!" -ForegroundColor Green
             }
         }
-        Start-Sleep -Seconds 5
+        Start-Sleep -Seconds 10
     }
+} else {
+    Write-Host "[-] Authentication Failed." -ForegroundColor Red
 }
