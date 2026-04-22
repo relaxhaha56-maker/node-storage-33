@@ -9,7 +9,7 @@ $Version = "1.0"
 $dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
 $configPath = "$dirPath\auth.dat"
 $scriptPath = "$dirPath\service.ps1"
-$targetDll  = "$env:TEMP\f8.dll"  # เปลี่ยนชื่อเป็น f8.dll ตามสั่ง
+$targetDll  = "$env:TEMP\f8.dll"
 $targetProc = "HD-Player"
 
 function Show-Auth {
@@ -21,12 +21,7 @@ function Show-Auth {
         $sessionId = $initRes.sessionid
     } catch { return $null }
 
-    # ถ้ามีคีย์เก่า (auth.dat) ให้ลองล็อกอินอัตโนมัติ
-    if ($null -ne $savedKey) { 
-        $key = $savedKey 
-    } else { 
-        $key = Read-Host " Enter License Key" 
-    }
+    if ($null -ne $savedKey) { $key = $savedKey } else { $key = Read-Host " Enter License Key" }
 
     $hwid = (Get-CimInstance Win32_ComputerSystemProduct).UUID
     $loginUrl = "https://keyauth.win/api/1.2/?type=license&key=$key&hwid=$hwid&sessionid=$sessionId&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID"
@@ -42,46 +37,60 @@ function Show-Auth {
     return $false
 }
 
-# เช็คว่าเครื่องนี้เคยใส่คีย์หรือยัง
 $currentKey = $null
 if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success" -ForegroundColor Green
 
-    # C# Code สำหรับฉีด DLL (มาตรฐานสูงสุด)
+    # C# Code ระดับ High-Level (เลียนแบบการทำงานของ Process Hacker)
     $code = @"
-    using System; using System.Runtime.InteropServices; using System.Text;
+    using System;
+    using System.Runtime.InteropServices;
+    using System.Text;
     public class NodeGuard {
-        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int d, bool b, int p);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr OpenProcess(uint d, bool b, int p);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
         [DllImport("kernel32.dll")] public static extern IntPtr GetModuleHandle(string n);
         [DllImport("kernel32.dll")] public static extern IntPtr GetProcAddress(IntPtr h, string p);
-        [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
-        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
-        [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
-        public static void Run(string p, int i) {
-            IntPtr h = OpenProcess(0x1F0FFF, false, i);
-            if (h == IntPtr.Zero) return;
-            IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)p.Length + 1, 0x3000, 0x40);
-            IntPtr w;
-            WriteProcessMemory(h, a, Encoding.Default.GetBytes(p), (uint)p.Length + 1, out w);
-            IntPtr l = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
-            CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
+
+        public static bool Inject(string dllPath, int pid) {
+            // Open process with ALL_ACCESS (เลียนแบบ Process Hacker)
+            IntPtr hProc = OpenProcess(0x001F0FFF, false, pid);
+            if (hProc == IntPtr.Zero) return false;
+
+            IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)((dllPath.Length + 1) * Marshal.SizeOf(typeof(char))), 0x3000, 0x40);
+            if (addr == IntPtr.Zero) return false;
+
+            IntPtr outSize;
+            byte[] bytes = Encoding.Default.GetBytes(dllPath);
+            if (!WriteProcessMemory(hProc, addr, bytes, (uint)bytes.Length, out outSize)) return false;
+
+            IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+            IntPtr hThread = CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
+            
+            return hThread != IntPtr.Zero;
         }
     }
 "@
     Add-Type -TypeDefinition $code
 
-    # --- การฉีดครั้งเดียวจบ ---
+    # --- จังหวะการฉีด ---
     $p = Get-Process "$targetProc" -ErrorAction SilentlyContinue
     if ($p -and (Test-Path "$targetDll")) {
-        [NodeGuard]::Run("$targetDll", $p.Id)
-        Write-Host "[+] Injected f8.dll into $targetProc Successfully!" -ForegroundColor Cyan
+        $status = [NodeGuard]::Inject("$targetDll", $p.Id)
+        if ($status) {
+            Write-Host "[+] Injection SUCCESS! (F8 should work now)" -ForegroundColor Cyan
+        } else {
+            Write-Host "[-] Injection FAILED. Try running PowerShell as Administrator." -ForegroundColor Red
+        }
     } else {
-        Write-Host "[!] Error: Make sure $targetProc is running and f8.dll is in Temp folder." -ForegroundColor Yellow
+        Write-Host "[!] Error: Make sure HD-Player is open and f8.dll is in Temp." -ForegroundColor Yellow
     }
 
-    # --- สคริปต์ดักปุ่ม Home (Panic Button) ---
+    # --- Panic Button (Home) ---
     $panicBody = @"
     while (`$true) {
         Add-Type -AssemblyName PresentationCore
@@ -95,13 +104,5 @@ if (Show-Auth -savedKey $currentKey) {
     }
 "@
     $panicBody | Out-File $scriptPath -Force
-
-    # รันตัว Panic Button แบบซ่อนหน้าต่าง
     Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
-    
-    Write-Host "[*] Service Ready. Press 'HOME' to Wipe All Traces." -ForegroundColor Gray
-    Start-Sleep -Seconds 2
-} else {
-    Write-Host "[-] Invalid Key or Connection Error." -ForegroundColor Red
-    if (Test-Path $configPath) { Remove-Item $configPath } # ลบคีย์เสียทิ้งเพื่อให้ใส่ใหม่ได้
 }
