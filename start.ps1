@@ -1,110 +1,98 @@
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# --- Configuration ---
+# --- ข้อมูล KeyAuth ---
 $Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
 $Version = "1.0"
 
-$dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
-$configPath = "$dirPath\auth.dat"
-$scriptPath = "$dirPath\service.ps1"
-$targetDll  = "$env:TEMP\AimbotFemaleFix.dll"
-$targetProc = "HD-Player"
-
-# --- KeyAuth System (Remember Me) ---
 function Show-Auth {
-    param($savedKey = $null)
+    Clear-Host
+    Write-Host "==============================" -ForegroundColor Cyan
+    Write-Host "    BASX AIMBOT AI v$Version" -ForegroundColor Cyan
+    Write-Host "==============================" -ForegroundColor Cyan
+    
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
     try {
         $initRes = Invoke-RestMethod -Uri $initUrl -Method Get
-        if ($initRes.success -ne $true) { return $null }
+        if ($initRes.success -ne $true) { return $false }
         $sessionId = $initRes.sessionid
-    } catch { return $null }
+    } catch { return $false }
 
-    if ($null -ne $savedKey) { $key = $savedKey } else { $key = Read-Host " Enter License Key" }
-
+    $key = Read-Host " Enter License Key"
     $hwid = (Get-CimInstance Win32_ComputerSystemProduct).UUID
     $loginUrl = "https://keyauth.win/api/1.2/?type=license&key=$key&hwid=$hwid&sessionid=$sessionId&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID"
     
     try {
         $loginRes = Invoke-RestMethod -Uri $loginUrl -Method Get
-        if ($loginRes.success -eq $true) {
-            if (!(Test-Path $dirPath)) { New-Item -ItemType Directory -Path $dirPath -Force }
-            $key | Out-File $configPath -Force
-            return $true
-        }
-    } catch { }
-    return $false
+        return $loginRes.success -eq $true
+    } catch { return $false }
 }
 
-$currentKey = $null
-if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
+if (Show-Auth) {
+    # กำหนดชื่อไฟล์และ Path ให้ชัดเจน
+    $dllUrl = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/refs/heads/main/winsky.dll"
+    $tempPath = "$env:TEMP\AimbotFemaleFix.dll"
+    $targetProc = "HD-Player"
 
-if (Show-Auth -savedKey $currentKey) {
-    Write-Host "[+] Login Success" -ForegroundColor Green
+    Write-Host "[*] Downloading winsky.dll..." -ForegroundColor Yellow
+    try {
+        $wc = New-Object System.Net.WebClient
+        $wc.DownloadFile($dllUrl, $tempPath)
+    } catch { 
+        Write-Host "[!] Download Failed." -ForegroundColor Red
+        exit 
+    }
 
-    # C# Code: Memory Watcher + Injector Logic
-    $code = @"
+    $Source = @"
     using System;
     using System.Runtime.InteropServices;
+    using System.Diagnostics;
     using System.Text;
-    public class BasXGuard {
-        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint d, bool b, int p);
-        [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] b, int s, out int r);
-        [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
-        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
-        [DllImport("kernel32.dll")] public static extern IntPtr GetModuleHandle(string n);
-        [DllImport("kernel32.dll")] public static extern IntPtr GetProcAddress(IntPtr h, string p);
-        [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
-
-        public static bool IsLocked(IntPtr hProc, long addr) {
-            byte[] buffer = new byte[4];
-            int read;
-            if (ReadProcessMemory(hProc, (IntPtr)addr, buffer, 4, out read)) {
-                return buffer[0] == 0xFF && buffer[1] == 0xFF; 
-            }
-            return false;
-        }
-
-        public static void Inject(string dllPath, int pid) {
-            IntPtr h = OpenProcess(0x001F0FFF, false, pid);
-            if (h == IntPtr.Zero) return;
-            IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)dllPath.Length + 1, 0x3000, 0x40);
-            IntPtr w;
-            WriteProcessMemory(h, a, Encoding.Default.GetBytes(dllPath), (uint)dllPath.Length + 1, out w);
-            IntPtr l = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
-            CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero);
+    public class NodeHandler {
+        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto)] public static extern IntPtr GetModuleHandle(string lpModuleName);
+        [DllImport("kernel32", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)] static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+        [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)] static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
+        [DllImport("kernel32.dll", SetLastError = true)] static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, uint nSize, out IntPtr lpNumberOfBytesWritten);
+        [DllImport("kernel32.dll")] static extern IntPtr CreateRemoteThread(IntPtr hProcess, IntPtr lpThreadAttributes, uint dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
+        
+        public static void StartNode(string path, string pName) {
+            Process[] target = Process.GetProcessesByName(pName);
+            if (target.Length == 0) return;
+            IntPtr hProc = OpenProcess(0x001F0FFF, false, target[0].Id);
+            IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
+            IntPtr outSize;
+            WriteProcessMemory(hProc, addr, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out outSize);
+            IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+            CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
         }
     }
 "@
-    Add-Type -TypeDefinition $code
+    Add-Type -TypeDefinition $Source
 
-    # --- ส่วนการทำงานเบื้องหลัง (Background Service) ---
-    $serviceBody = @"
-    while (`$true) {
-        `$p = Get-Process "$targetProc" -ErrorAction SilentlyContinue
-        if (`$p) {
-            `$hProc = [BasXGuard]::OpenProcess(0x001F0FFF, `$false, `$p.Id)
-            
-            # ตรวจสอบค่าที่ตำแหน่ง 0x2EC (READ)
-            # ถ้าค่าไม่ใช่ค่าล็อคหัว ให้ฉีดใหม่ทันที
-            if (![BasXGuard]::IsLocked(`$hProc, 0x2EC)) {
-                if (Test-Path "$targetDll") {
-                    [BasXGuard]::Inject("$targetDll", `$p.Id)
-                }
+    # ทำการฉีดเข้า HD-Player ทันที
+    Write-Host "[*] Injecting winsky.dll into HD-Player..." -ForegroundColor Yellow
+    [NodeHandler]::StartNode($tempPath, $targetProc)
+    Write-Host "[+] Injection Completed." -ForegroundColor Green
+
+    # ระบบ Panic Button รันเบื้องหลังเพื่อดักปุ่ม Home
+    $ScriptBlock = {
+        param($path)
+        Add-Type -AssemblyName PresentationCore
+        while ($true) {
+            if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
+                # ลบไฟล์ DLL ทันทีเพื่อทำลายร่องรอย
+                Remove-Item $path -Force -ErrorAction SilentlyContinue
+                break
             }
+            Start-Sleep -Seconds 1
         }
-        Start-Sleep -Seconds 5 
     }
-"@
-    $serviceBody | Out-File $scriptPath -Force
+    Start-Job -ScriptBlock $ScriptBlock -ArgumentList $tempPath -Name "BasX_Panic"
 
-    # รันสคริปต์เบื้องหลัง
-    Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
-    
-    Write-Host "[+] BasX Smart Protection Active" -ForegroundColor Green
-    Write-Host "[*] DLL: AimbotFemaleFix.dll" -ForegroundColor Cyan
-    Write-Host "[*] Monitoring Memory 0x2EC / 0x2E8..." -ForegroundColor Gray
-    Start-Sleep -Seconds 2
+    Write-Host "[!] System Ready. Press 'HOME' to Clean up." -ForegroundColor Red
+    Start-Sleep -Seconds 3
+} else {
+    Write-Host "[-] Login Failed." -ForegroundColor Red
 }
