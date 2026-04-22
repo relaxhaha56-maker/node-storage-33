@@ -1,6 +1,6 @@
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# --- Config ---
+# --- Configuration ---
 $Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
@@ -10,9 +10,11 @@ $dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
 $configPath = "$dirPath\auth.dat"
 $scriptPath = "$dirPath\service.ps1"
 $vbsPath    = "$dirPath\launcher.vbs"
-$hiddenDll  = "$dirPath\win_sys.dll" # ย้ายมาเก็บที่นี่แทนการลบทิ้ง
+$hiddenDll  = "$dirPath\win_sys.dll"
 $tempDll    = "$env:TEMP\winsky.dll"
 $targetProc = "HD-Player"
+$regPath    = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+$regName    = "WindowsHealthMonitor"
 
 function Show-Auth {
     param($savedKey = $null)
@@ -45,10 +47,12 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success" -ForegroundColor Green
 
-    # ย้าย DLL ไปไว้ในที่ลับเพื่อใช้ฉีดซ้ำได้
+    # พยายามย้าย DLL ไปที่ลับ
     if (Test-Path $tempDll) {
-        Copy-Item $tempDll -Destination $hiddenDll -Force
-        Remove-Item $tempDll -Force
+        try {
+            Copy-Item $tempDll -Destination $hiddenDll -Force -ErrorAction SilentlyContinue
+            Remove-Item $tempDll -Force -ErrorAction SilentlyContinue
+        } catch { }
     }
 
     $code = @"
@@ -74,42 +78,52 @@ if (Show-Auth -savedKey $currentKey) {
         }
     }
 "@
-    
-    # สคริปต์เบื้องหลังที่ฉีดซ้ำได้เรื่อยๆ
+
+    # สคริปต์เบื้องหลัง: เพิ่มระบบลบ Startup และล้างร่องรอย
     $serviceBody = @"
     `$target = "$targetProc"
-    `$dll = "$hiddenDll"
+    `$dir = "$dirPath"
+    `$regP = "$regPath"
+    `$regN = "$regName"
+    
     while (`$true) {
         `$proc = Get-Process `$target -ErrorAction SilentlyContinue
         if (`$proc) {
-            # ตรวจสอบว่าใน Process มี DLL นี้หรือยัง (กันฉีดซ้ำซ้อน)
-            `$alreadyIn = `$false
-            try { foreach (`$m in `$proc.Modules) { if (`$m.FileName -eq `$dll) { `$alreadyIn = `$true; break } } } catch { }
-            
-            if (-not `$alreadyIn) {
-                [NodeGuard]::Run(`$dll, `$proc.Id)
-            }
+            [NodeGuard]::Run("$hiddenDll", `$proc.Id)
         }
+        
+        # ตรวจสอบการกดปุ่ม Home
         Add-Type -AssemblyName PresentationCore
         if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
+            # 1. ปิดเกมทันที
             Stop-Process -Name `$target -Force -ErrorAction SilentlyContinue
-            Remove-Item "$dirPath" -Recurse -Force -ErrorAction SilentlyContinue
-            break
+            
+            # 2. ลบค่า Startup ใน Registry (ไม่ให้รันตอนเปิดคอมครั้งหน้า)
+            Remove-ItemProperty -Path `$regP -Name `$regN -ErrorAction SilentlyContinue
+            
+            # 3. ลบโฟลเดอร์เก็บสคริปต์และ DLL ทั้งหมด
+            Remove-Item `$dir -Recurse -Force -ErrorAction SilentlyContinue
+            
+            # 4. หยุดการทำงานของสคริปต์ตัวเอง
+            exit
         }
-        Start-Sleep -Seconds 5
+        Start-Sleep -Seconds 10
     }
 "@
     $finalScript = "Add-Type -TypeDefinition @'`n$code`n'@`n" + $serviceBody
     $finalScript | Out-File $scriptPath -Force
 
-    # สร้าง VBS ตัวใหม่
-    $vbsContent = "Dim shell: set shell = CreateObject(`"WScript.Shell`"): shell.Run `"powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"`" & shell.ExpandEnvironmentStrings(`"%LOCALAPPDATA%\WindowsHealth\service.ps1`") & `"`"`", 0, False"
-    $vbsContent | Out-File $vbsPath -Force
+    # สร้าง VBS Launcher
+    $vbsCmd = "Set WshShell = CreateObject(`"WScript.Shell`"): WshShell.Run `"powershell.exe -WindowStyle Hidden -File `"`" & WshShell.ExpandEnvironmentStrings(`"%LOCALAPPDATA%\WindowsHealth\service.ps1`") & `"`"`", 0, False"
+    $vbsCmd | Out-File $vbsPath -Force
 
-    # รันทันที
+    # ตั้ง Startup
+    Set-ItemProperty -Path $regPath -Name $regName -Value "wscript.exe `"$vbsPath`""
+    
+    # รันเบื้องหลัง
     Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbsPath`""
     
     Write-Host "[+] Stealth Persistence Active" -ForegroundColor Cyan
-    Write-Host "[*] Now you can restart Emulator anytime." -ForegroundColor Green
+    Write-Host "[!] Press 'HOME' to Close Game & Delete All Traces" -ForegroundColor Red
     Start-Sleep -Seconds 2
 }
