@@ -1,16 +1,17 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# --- App Config ---
+# --- App Config (Updated) ---
 $Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
 $Version = "1.0"
-$dllUrl  = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/main/winsky.dll"
+# เปลี่ยน URL ให้ชี้ไปที่ AimbotFemaleFix.dll ตามที่คุณต้องการ
+$dllUrl  = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/main/AimbotFemaleFix.dll"
 
 function Show-Auth {
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "   BASX SYSTEM SIDE-LOADER    " -ForegroundColor Cyan
+    Write-Host "   BASX FEMALE-FIX LOADER     " -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
     try {
@@ -26,30 +27,32 @@ function Show-Auth {
 if (Show-Auth) {
     Write-Host "[+] Authentication Verified." -ForegroundColor Green
     
-    # 1. Download DLL to a permanent system location
+    # 1. Download the correct DLL to System32
     $destPath = "C:\Windows\System32\win_driver_ext.dll"
-    Write-Host "[*] Downloading system component..." -ForegroundColor Cyan
+    Write-Host "[*] Downloading AimbotFemaleFix.dll..." -ForegroundColor Cyan
     try {
         Invoke-WebRequest -Uri $dllUrl -OutFile $destPath -ErrorAction Stop
+        Write-Host "[+] Download Complete." -ForegroundColor Green
     } catch {
-        Write-Host "[-] Download Failed. Run as Admin!" -ForegroundColor Red
+        Write-Host "[-] Download Failed. Check your GitHub Link!" -ForegroundColor Red
         return
     }
 
-    # 2. Use Windows Registry to force-load the DLL (AppInit_DLLs)
-    Write-Host "[!] Side-loading into Windows environment..." -ForegroundColor Yellow
+    # 2. Update Registry to Side-load the new DLL
+    Write-Host "[!] Updating Windows Registry for Auto-Load..." -ForegroundColor Yellow
     $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows"
     
     try {
-        # Enable AppInit_DLLs
         Set-ItemProperty -Path $regPath -Name "LoadAppInit_DLLs" -Value 1
-        # Set the DLL path
         Set-ItemProperty -Path $regPath -Name "AppInit_DLLs" -Value $destPath
         
-        Write-Host "[+] SYSTEM LOADED SUCCESSFULLY!" -ForegroundColor Green
-        Write-Host "[*] IMPORTANT: Close and RESTART your Emulator now." -ForegroundColor White
-        Write-Host "[*] The DLL will auto-load when HD-Player starts." -ForegroundColor White
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "  SUCCESS: AimbotFemaleFix is Active!   " -ForegroundColor Green
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "[*] 1. Close HD-Player (Emulator) completely." -ForegroundColor White
+        Write-Host "[*] 2. Open HD-Player again." -ForegroundColor White
+        Write-Host "[*] 3. The DLL will be injected automatically." -ForegroundColor White
     } catch {
-        Write-Host "[-] Registry Access Denied. Check your Antivirus!" -ForegroundColor Red
+        Write-Host "[-] Registry Error. Please run as Administrator!" -ForegroundColor Red
     }
 }
