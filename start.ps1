@@ -6,7 +6,6 @@ $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
 $Version = "1.0"
 
-# Path using Environment Variables to avoid VBS errors
 $dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
 $configPath = "$dirPath\auth.dat"
 $scriptPath = "$dirPath\service.ps1"
@@ -14,6 +13,7 @@ $vbsPath    = "$dirPath\launcher.vbs"
 $dllPath    = "$env:TEMP\winsky.dll"
 $targetProc = "HD-Player"
 
+# --- ฟังก์ชันล้างค่าเก่า (ถ้าอยากให้ขึ้นช่องใส่คีย์ใหม่ให้ลบไฟล์ใน $configPath) ---
 function Show-Auth {
     param($savedKey = $null)
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
@@ -23,7 +23,11 @@ function Show-Auth {
         $sessionId = $initRes.sessionid
     } catch { return $null }
 
-    if ($null -eq $savedKey) { $key = Read-Host " Enter License Key" } else { $key = $savedKey }
+    if ($null -eq $savedKey) { 
+        $key = Read-Host " Enter License Key" 
+    } else { 
+        $key = $savedKey 
+    }
 
     $hwid = (Get-CimInstance Win32_ComputerSystemProduct).UUID
     $loginUrl = "https://keyauth.win/api/1.2/?type=license&key=$key&hwid=$hwid&sessionid=$sessionId&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID"
@@ -36,6 +40,8 @@ function Show-Auth {
             return $true
         }
     } catch { }
+    # ถ้า Key เก่าใช้ไม่ได้ ให้ลบไฟล์ทิ้งเพื่อให้รันครั้งหน้าขึ้นช่องใส่คีย์
+    if (Test-Path $configPath) { Remove-Item $configPath -Force }
     return $false
 }
 
@@ -45,7 +51,7 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success" -ForegroundColor Green
 
-    # --- Injection Logic ---
+    # --- โค้ดฉีด DLL ---
     $code = @"
     using System;
     using System.Runtime.InteropServices;
@@ -71,14 +77,14 @@ if (Show-Auth -savedKey $currentKey) {
 "@
     Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
 
-    # --- First Injection ---
+    # ฉีดรอบแรกทันที
     $mainProc = Get-Process $targetProc -ErrorAction SilentlyContinue
     if ($mainProc) {
         Write-Host "[*] Injecting..." -ForegroundColor Yellow
         [NodeGuard]::Run($dllPath, $mainProc.Id)
     }
 
-    # --- Setup Background Service ---
+    # เตรียมสคริปต์เบื้องหลัง
     $serviceBody = @"
     `$target = "$targetProc"
     `$dll = "$dllPath"
@@ -101,17 +107,19 @@ if (Show-Auth -savedKey $currentKey) {
     $finalScript = "Add-Type -TypeDefinition @'`n$code`n'@`n" + $serviceBody
     $finalScript | Out-File $scriptPath -Force
 
-    # --- NEW VBS LAUNCHER (Fixing the Compilation Error) ---
-    $vbsContent = "Set WshShell = CreateObject(`"WScript.Shell`"): WshShell.Run `"powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"`" & `"$scriptPath`" & `"`"`", 0, False"
+    # --- แก้ไข VBS ใหม่ (แบบตัดปัญหาเรื่อง Path) ---
+    $vbsContent = "Set objShell = WScript.CreateObject(`"WScript.Shell`"): objShell.Run `"powershell.exe -WindowStyle Hidden -File `"`"$scriptPath`"`" `", 0, False"
     $vbsContent | Out-File $vbsPath -Force
 
-    # Startup
-    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -Value "wscript.exe `"$vbsPath`""
+    # ตั้ง Startup
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -Value "wscript.exe `"$vbsPath` Microsft`""
 
-    # Execute
+    # รันทันทีแบบซ่อนหน้าต่าง
     Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbsPath`""
     
     Write-Host "[+] Stealth Service Activated" -ForegroundColor Cyan
-    Write-Host "[!] You can close this window now" -ForegroundColor Green
+    Write-Host "[!] Everything is set. You can close this." -ForegroundColor Green
     Start-Sleep -Seconds 2
+} else {
+    Write-Host "[-] Invalid Key or Connection Error." -ForegroundColor Red
 }
