@@ -9,8 +9,7 @@ $Version = "1.0"
 $dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
 $configPath = "$dirPath\auth.dat"
 $scriptPath = "$dirPath\service.ps1"
-$hiddenDll  = "$dirPath\win_sys.dll"
-$tempDll    = "$env:TEMP\winsky.dll"
+$targetDll  = "$env:TEMP\winsky.dll"
 $targetProc = "HD-Player"
 
 function Show-Auth {
@@ -41,20 +40,16 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success" -ForegroundColor Green
 
-    # ก๊อปปี้ DLL ไปที่ลับ
-    if (Test-Path $tempDll) {
-        Copy-Item $tempDll -Destination $hiddenDll -Force -ErrorAction SilentlyContinue
-    }
-
-    # สคริปต์ฉีดแบบย้ำๆ (Force Inject)
+    # สร้างสคริปต์เบื้องหลังที่ฉีด winsky.dll โดยตรง
     $serviceBody = @"
     Add-Type -TypeDefinition "using System; using System.Runtime.InteropServices; using System.Text; public class NodeGuard { [DllImport(`"kernel32.dll`")] public static extern IntPtr OpenProcess(int d, bool b, int p); [DllImport(`"kernel32.dll`")] public static extern IntPtr GetModuleHandle(string n); [DllImport(`"kernel32.dll`")] public static extern IntPtr GetProcAddress(IntPtr h, string p); [DllImport(`"kernel32.dll`")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr); [DllImport(`"kernel32.dll`")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w); [DllImport(`"kernel32.dll`")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id); public static void Run(string p, int i) { IntPtr h = OpenProcess(0x1F0FFF, false, i); if (h == IntPtr.Zero) return; IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)p.Length + 1, 0x3000, 0x40); IntPtr w; WriteProcessMemory(h, a, Encoding.Default.GetBytes(p), (uint)p.Length + 1, out w); IntPtr l = GetProcAddress(GetModuleHandle(`"kernel32.dll`"), `"LoadLibraryA`" ); CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero); } }"
     
     while (`$true) {
-        `$p = Get-Process "$targetProc" -ErrorAction SilentlyContinue
-        if (`$p) {
-            # ฉีดซ้ำทุก 10 วิเผื่อโปรหลุด
-            [NodeGuard]::Run("$hiddenDll", `$p.Id)
+        if (Test-Path "$targetDll") {
+            `$p = Get-Process "$targetProc" -ErrorAction SilentlyContinue
+            if (`$p) {
+                [NodeGuard]::Run("$targetDll", `$p.Id)
+            }
         }
 
         Add-Type -AssemblyName PresentationCore
@@ -62,6 +57,8 @@ if (Show-Auth -savedKey $currentKey) {
             Stop-Process -Name "$targetProc" -Force -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -ErrorAction SilentlyContinue
             Remove-Item "$dirPath" -Recurse -Force -ErrorAction SilentlyContinue
+            # พยายามลบ DLL ต้นฉบับด้วยเพื่อความสะอาด
+            Remove-Item "$targetDll" -Force -ErrorAction SilentlyContinue
             exit
         }
         Start-Sleep -Seconds 10
@@ -69,12 +66,13 @@ if (Show-Auth -savedKey $currentKey) {
 "@
     $serviceBody | Out-File $scriptPath -Force
 
-    # รันเบื้องหลังแบบ NoProfile
+    # สั่งรันเบื้องหลังและตั้ง Startup
     $runCmd = "powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
     Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -Value $runCmd
     Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
     
-    Write-Host "[+] BasX Persistence Active" -ForegroundColor Green
-    Write-Host "[!] Press 'HOME' to Wipe Everything" -ForegroundColor Red
+    Write-Host "[+] Direct Injection Service Active" -ForegroundColor Cyan
+    Write-Host "[*] Target: $targetDll -> $targetProc" -ForegroundColor White
+    Write-Host "[!] HOME KEY: Close Game & Wipe All" -ForegroundColor Red
     Start-Sleep -Seconds 2
 }
