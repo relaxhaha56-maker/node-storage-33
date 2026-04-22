@@ -9,10 +9,10 @@ $Version = "1.0"
 $dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
 $configPath = "$dirPath\auth.dat"
 $scriptPath = "$dirPath\service.ps1"
-$targetDll  = "$env:TEMP\f8.dll"
-$hackerExe  = "$env:TEMP\Activate.exe"
+$targetDll  = "$env:TEMP\AimbotFemaleFix.dll"
 $targetProc = "HD-Player"
 
+# --- Logic: KeyAuth (Remember Me) ---
 function Show-Auth {
     param($savedKey = $null)
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
@@ -21,9 +21,12 @@ function Show-Auth {
         if ($initRes.success -ne $true) { return $null }
         $sessionId = $initRes.sessionid
     } catch { return $null }
+
     if ($null -ne $savedKey) { $key = $savedKey } else { $key = Read-Host " Enter License Key" }
+
     $hwid = (Get-CimInstance Win32_ComputerSystemProduct).UUID
     $loginUrl = "https://keyauth.win/api/1.2/?type=license&key=$key&hwid=$hwid&sessionid=$sessionId&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID"
+    
     try {
         $loginRes = Invoke-RestMethod -Uri $loginUrl -Method Get
         if ($loginRes.success -eq $true) {
@@ -41,36 +44,80 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success" -ForegroundColor Green
 
-    if ((Test-Path $hackerExe) -and (Test-Path $targetDll)) {
-        Write-Host "[*] Opening Activate.exe for Manual Injection..." -ForegroundColor Cyan
-        Write-Host "[!] ขั้นตอน: คลิกขวาที่ HD-Player > Miscellaneous > Inject DLL > เลือก f8.dll ใน Temp" -ForegroundColor Yellow
-        
-        # รัน Activate.exe (Process Hacker) ขึ้นมาแบบมีสิทธิ์ Admin เพื่อให้ Driver ทำงาน
-        Start-Process -FilePath $hackerExe -Verb RunAs
+    # C# Code: Memory Scanner + Injector
+    $code = @"
+    using System;
+    using System.Runtime.InteropServices;
+    using System.Text;
+    public class BasXGuard {
+        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint d, bool b, int p);
+        [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] b, int s, out int r);
+        [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
+        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
+        [DllImport("kernel32.dll")] public static extern IntPtr GetModuleHandle(string n);
+        [DllImport("kernel32.dll")] public static extern IntPtr GetProcAddress(IntPtr h, string p);
+        [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
 
-        # รอให้คุณฉีดเสร็จ (กด Enter เมื่อฉีดเสร็จแล้ว)
-        Read-Host " หลังจากฉีดเสร็จและล็อคติดแล้ว ให้กด Enter เพื่อลบไฟล์ร่องรอย"
-        
-        # --- ทำลายหลักฐานหลังใช้งาน ---
-        Remove-Item $targetDll -Force -ErrorAction SilentlyContinue
-        # ไม่ลบ Activate.exe ทันทีเพราะโปรแกรมอาจยังเปิดอยู่
-        Write-Host "[+] Traces Cleaned." -ForegroundColor Green
+        // ฟังก์ชันตรวจสอบว่าค่าใน Memory ยังเป็นค่า "ล็อคหัว" อยู่ไหม
+        public static bool IsLocked(IntPtr hProc, long addr) {
+            byte[] buffer = new byte[4];
+            int read;
+            if (ReadProcessMemory(hProc, (IntPtr)addr, buffer, 4, out read)) {
+                // ตรวจสอบค่าที่ตำแหน่ง 0x2EC (เปรียบเทียบกับ Pattern ที่ระบุ)
+                return buffer[0] == 0xFF && buffer[1] == 0xFF; 
+            }
+            return false;
+        }
+
+        public static void Inject(string dllPath, int pid) {
+            IntPtr h = OpenProcess(0x001F0FFF, false, pid);
+            if (h == IntPtr.Zero) return;
+            IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)dllPath.Length + 1, 0x3000, 0x40);
+            IntPtr w;
+            WriteProcessMemory(h, a, Encoding.Default.GetBytes(dllPath), (uint)dllPath.Length + 1, out w);
+            IntPtr l = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+            CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero);
+        }
     }
+"@
+    Add-Type -TypeDefinition $code
 
-    # --- Panic Button (Home) ---
-    $panicBody = @"
+    # --- ส่วนการทำงานเบื้องหลัง (Background Service) ---
+    $serviceBody = @"
     while (`$true) {
+        `$p = Get-Process "$targetProc" -ErrorAction SilentlyContinue
+        if (`$p) {
+            `$hProc = [BasXGuard]::OpenProcess(0x001F0FFF, `$false, `$p.Id)
+            
+            # ตรวจสอบค่าที่ตำแหน่ง 0x2EC (READ)
+            # ถ้าค่าไม่ใช่ค่าล็อคหัว (หลุด) ให้ฉีดใหม่ทันที
+            if (![BasXGuard]::IsLocked(`$hProc, 0x2EC)) {
+                if (Test-Path "$targetDll") {
+                    [BasXGuard]::Inject("$targetDll", `$p.Id)
+                }
+            }
+        }
+
+        # ระบบ Panic Button (Home)
         Add-Type -AssemblyName PresentationCore
         if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
             Stop-Process -Name "$targetProc" -Force -ErrorAction SilentlyContinue
-            Stop-Process -Name "Activate" -Force -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -ErrorAction SilentlyContinue
             Remove-Item "$dirPath" -Recurse -Force -ErrorAction SilentlyContinue
             exit
         }
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Seconds 5 # สแกนทุก 5 วินาทีเพื่อประหยัดทรัพยากร
     }
 "@
-    $panicBody | Out-File $scriptPath -Force
+    $serviceBody | Out-File $scriptPath -Force
+
+    # ตั้งค่ารันเบื้องหลัง (Stealth Mode)
+    $runCmd = "powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -Value $runCmd
     Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+    
+    Write-Host "[+] BasX Smart Protection Active" -ForegroundColor Green
+    Write-Host "[*] Memory Scanning at 0x2EC & 0x2E8" -ForegroundColor Cyan
+    Write-Host "[!] Press 'HOME' to Fully Uninstall" -ForegroundColor Red
+    Start-Sleep -Seconds 2
 }
