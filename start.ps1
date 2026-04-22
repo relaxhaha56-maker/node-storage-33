@@ -1,7 +1,7 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# --- Final Configuration ---
+# --- Final Control Config ---
 $Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
@@ -10,7 +10,7 @@ $target  = "HD-Player"
 
 function Show-Auth {
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "    BASX DIRECT PATCHER v3    " -ForegroundColor Cyan
+    Write-Host "   BASX EXTERNAL CONTROLLER   " -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
     try {
@@ -26,53 +26,41 @@ function Show-Auth {
 if (Show-Auth) {
     Write-Host "[+] Authentication Verified." -ForegroundColor Green
 
+    # โหลด Library สำหรับควบคุมคีย์บอร์ด
     $Source = @"
     using System;
     using System.Runtime.InteropServices;
-    using System.Diagnostics;
+    using System.Windows.Forms;
 
-    public class DirectPatch {
-        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint acc, bool inh, int pid);
-        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
-        [DllImport("kernel32.dll")] public static extern bool VirtualProtectEx(IntPtr h, IntPtr a, uint s, uint newP, out uint oldP);
-
-        public static bool Apply(int pid, long address, byte[] patchData) {
-            IntPtr hProc = OpenProcess(0x1F0FFF, false, pid);
-            if (hProc == IntPtr.Zero) return false;
-
-            uint oldProtect;
-            // Unprotect memory before writing
-            VirtualProtectEx(hProc, (IntPtr)address, (uint)patchData.Length, 0x40, out oldProtect);
-            
-            IntPtr written;
-            bool success = WriteProcessMemory(hProc, (IntPtr)address, patchData, (uint)patchData.Length, out written);
-            
-            // Restore protection
-            VirtualProtectEx(hProc, (IntPtr)address, (uint)patchData.Length, oldProtect, out oldProtect);
-            return success;
+    public class ExternalControl {
+        [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+        [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
+        
+        public static void PressF6() {
+            keybd_event(0x75, 0, 0, 0); // F6 Key Down
+            System.Threading.Thread.Sleep(100);
+            keybd_event(0x75, 0, 0x0002, 0); // F6 Key Up
         }
     }
 "@
-    Add-Type -TypeDefinition $Source
+    Add-Type -ReferencedAssemblies "System.Windows.Forms" -TypeDefinition $Source
 
-    # ข้อมูล Patch (ตัวอย่าง: แก้ค่าล็อคหัวโดยตรง)
-    $patchAddr = 0x2EC 
-    $hexData = @(0xFF, 0xFF, 0x90, 0x90) # ค่าที่ใช้ Patch
-
-    Write-Host "[*] Status: Searching for $target..." -ForegroundColor Cyan
+    Write-Host "[*] Controller active. Waiting for $target..." -ForegroundColor Cyan
     while ($true) {
         $p = Get-Process $target -ErrorAction SilentlyContinue
         if ($p) {
-            Write-Host "[!] Target found. Patching memory directly..." -ForegroundColor Yellow
-            if ([DirectPatch]::Apply($p.Id, $patchAddr, $hexData)) {
-                Write-Host "[+] DONE! Memory patched successfully." -ForegroundColor Green
-                Write-Host "[*] You can start playing now." -ForegroundColor White
-                break
-            } else {
-                Write-Host "[-] Critical Error: Memory is write-protected." -ForegroundColor Red
-                Start-Sleep -Seconds 5
-            }
+            Write-Host "[!] Target found. Activating function via Key Signal..." -ForegroundColor Yellow
+            
+            # บังคับให้หน้าต่างเกมเด้งขึ้นมาข้างหน้า
+            [ExternalControl]::SetForegroundWindow($p.MainWindowHandle)
+            Start-Sleep -Milliseconds 500
+            
+            # ส่งคำสั่งกด F6 ไปยังเกมโดยตรงจากระบบ
+            [ExternalControl]::PressF6()
+            
+            Write-Host "[+] F6 Signal Sent! Check your headshot lock in game." -ForegroundColor Green
+            break
         }
-        Start-Sleep -Seconds 2
+        Start-Sleep -Seconds 3
     }
 }
