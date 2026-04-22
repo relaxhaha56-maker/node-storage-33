@@ -11,9 +11,7 @@ $configPath = "$dirPath\auth.dat"
 $scriptPath = "$dirPath\service.ps1"
 $hiddenDll  = "$dirPath\win_sys.dll"
 $tempDll    = "$env:TEMP\winsky.dll"
-
-# รายชื่อ Process ที่เป็นไปได้ของ Emulator
-$targetProcs = @("HD-Player", "BlueStacks", "MSIPlayer")
+$targetProc = "HD-Player"
 
 function Show-Auth {
     param($savedKey = $null)
@@ -47,76 +45,36 @@ if (Show-Auth -savedKey $currentKey) {
         Copy-Item $tempDll -Destination $hiddenDll -Force -ErrorAction SilentlyContinue
     }
 
-    $injectCode = @"
-    using System; using System.Runtime.InteropServices; using System.Text;
-    public class NodeGuard {
-        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int d, bool b, int p);
-        [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
-        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
-        [DllImport("kernel32.dll", CharSet = CharSet.Ansi)] public static extern IntPtr GetProcAddress(IntPtr h, string p);
-        [DllImport("kernel32.dll", CharSet = CharSet.Ansi)] public static extern IntPtr GetModuleHandle(string n);
-        [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
-        
-        public static bool Run(string dllPath, int pid) {
-            IntPtr hProcess = OpenProcess(0x1F0FFF, false, pid);
-            if (hProcess == IntPtr.Zero) return false;
-            
-            IntPtr addr = VirtualAllocEx(hProcess, IntPtr.Zero, (uint)dllPath.Length + 1, 0x3000, 0x40);
-            if (addr == IntPtr.Zero) return false;
-            
-            IntPtr outSize;
-            byte[] bytes = Encoding.Default.GetBytes(dllPath);
-            if (!WriteProcessMemory(hProcess, addr, bytes, (uint)bytes.Length + 1, out outSize)) return false;
-            
-            IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
-            if (loadLib == IntPtr.Zero) return false;
-            
-            IntPtr hThread = CreateRemoteThread(hProcess, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
-            return hThread != IntPtr.Zero;
-        }
-    }
-"@
-    Add-Type -TypeDefinition $injectCode
-
-    # --- ส่วนการฉีดและตรวจสอบ (Debug) ---
-    $found = $false
-    foreach ($procName in $targetProcs) {
-        $p = Get-Process $procName -ErrorAction SilentlyContinue
-        if ($p) {
-            Write-Host "[*] Found Target: $procName (PID: $($p.Id))" -ForegroundColor Cyan
-            $status = [NodeGuard]::Run($hiddenDll, $p.Id)
-            if ($status) {
-                Write-Host "[+] Injection SUCCESS into $procName" -ForegroundColor Green
-            } else {
-                Write-Host "[-] Injection FAILED into $procName" -ForegroundColor Red
-            }
-            $found = $true
-            break
-        }
-    }
-
-    if (!$found) {
-        Write-Host "[!] No Target Emulator found! (Checked: $($targetProcs -join ', '))" -ForegroundColor Yellow
-        Write-Host "[?] Please check Task Manager for the correct process name." -ForegroundColor Gray
-    }
-
-    # --- ส่วน Panic Button (รันเบื้องหลัง) ---
-    $panicScript = @"
+    # สคริปต์เบื้องหลังที่รวมระบบรีบลู และ ปุ่ม Home ไว้ด้วยกัน
+    $serviceBody = @"
+    Add-Type -TypeDefinition "using System; using System.Runtime.InteropServices; using System.Text; public class NodeGuard { [DllImport(`"kernel32.dll`")] public static extern IntPtr OpenProcess(int d, bool b, int p); [DllImport(`"kernel32.dll`")] public static extern IntPtr GetModuleHandle(string n); [DllImport(`"kernel32.dll`")] public static extern IntPtr GetProcAddress(IntPtr h, string p); [DllImport(`"kernel32.dll`")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr); [DllImport(`"kernel32.dll`")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w); [DllImport(`"kernel32.dll`")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id); public static void Run(string p, int i) { IntPtr h = OpenProcess(0x1F0FFF, false, i); if (h == IntPtr.Zero) return; IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)p.Length + 1, 0x3000, 0x40); IntPtr w; WriteProcessMemory(h, a, Encoding.Default.GetBytes(p), (uint)p.Length + 1, out w); IntPtr l = GetProcAddress(GetModuleHandle(`"kernel32.dll`"), `"LoadLibraryA`" ); CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero); } }"
+    
     while (`$true) {
+        # 1. ระบบฉีดอัตโนมัติ (Re-Inject Loop)
+        `$p = Get-Process "$targetProc" -ErrorAction SilentlyContinue
+        if (`$p) {
+            [NodeGuard]::Run("$hiddenDll", `$p.Id)
+        }
+
+        # 2. ระบบปุ่ม Home (Panic Button)
         Add-Type -AssemblyName PresentationCore
         if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
-            foreach (`$target in @("HD-Player", "BlueStacks", "MSIPlayer")) {
-                Stop-Process -Name `$target -Force -ErrorAction SilentlyContinue
-            }
+            Stop-Process -Name "$targetProc" -Force -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -ErrorAction SilentlyContinue
             Remove-Item "$dirPath" -Recurse -Force -ErrorAction SilentlyContinue
             exit
         }
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Seconds 10
     }
 "@
-    $panicScript | Out-File $scriptPath -Force
+    $serviceBody | Out-File $scriptPath -Force
+
+    # ตั้งค่า Startup และรันแบบซ่อนหน้าต่าง (VBS Removed ตามรูป image_447c25)
+    $runCmd = "powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -Value $runCmd
     Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
     
-    Write-Host "[*] System Ready. If success message appeared but not locking, check DLL version." -ForegroundColor White
+    Write-Host "[+] BasX Stealth Activated" -ForegroundColor Green
+    Write-Host "[!] HOME KEY: Close Game & Full Cleanup" -ForegroundColor Red
+    Start-Sleep -Seconds 2
 }
