@@ -1,12 +1,11 @@
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# --- ตั้งค่า KeyAuth ---
+# --- Configuration ---
 $Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
 $Version = "1.0"
 
-# --- เส้นทางลับสำหรับซ่อนไฟล์ (พลางตาว่าเป็นไฟล์ระบบ) ---
 $configPath = "$env:APPDATA\Microsoft\Protect\Windows_Auth.dat"
 $scriptPath = "$env:APPDATA\Microsoft\Protect\SysHost.ps1"
 $vbsPath    = "$env:APPDATA\Microsoft\Protect\SysHost.vbs"
@@ -22,11 +21,7 @@ function Show-Auth {
         $sessionId = $initRes.sessionid
     } catch { return $null }
 
-    if ($null -eq $savedKey) { 
-        $key = Read-Host " Enter License Key" 
-    } else { 
-        $key = $savedKey 
-    }
+    if ($null -eq $savedKey) { $key = Read-Host " Enter License Key" } else { $key = $savedKey }
 
     $hwid = (Get-CimInstance Win32_ComputerSystemProduct).UUID
     $loginUrl = "https://keyauth.win/api/1.2/?type=license&key=$key&hwid=$hwid&sessionid=$sessionId&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID"
@@ -47,76 +42,69 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] ยืนยันตัวตนสำเร็จ" -ForegroundColor Green
 
-    # สร้างสคริปต์ทำงานเบื้องหลัง (ซ่อนร่องรอยไฟล์)
-    $serviceContent = @"
-    while (`$true) {
-        `$proc = Get-Process "$targetProc" -ErrorAction SilentlyContinue
-        if (`$proc) {
-            `$code = @"
+    # --- ส่วนที่แก้ไข: ใช้ Here-String แบบ Single Quote เพื่อกัน Error ---
+    $serviceContent = @'
+    $target = "HD-Player"
+    $dll = "$env:TEMP\winsky.dll"
+    while ($true) {
+        $proc = Get-Process $target -ErrorAction SilentlyContinue
+        if ($proc) {
+            $code = @"
             using System;
             using System.Runtime.InteropServices;
-            using System.Diagnostics;
             using System.Text;
             using System.IO;
             public class NodeGuard {
-                [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int dwAccess, bool bInherit, int pid);
-                [DllImport("kernel32.dll")] public static extern IntPtr GetModuleHandle(string lpModuleName);
-                [DllImport("kernel32.dll")] public static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
-                [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr hProc, IntPtr addr, uint size, uint allocType, uint protect);
-                [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr hProc, IntPtr addr, byte[] buf, uint size, out IntPtr written);
-                [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr hProc, IntPtr attr, uint stack, IntPtr start, IntPtr param, uint flags, IntPtr id);
-                
+                [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int dw, bool b, int p);
+                [DllImport("kernel32.dll")] public static extern IntPtr GetModuleHandle(string n);
+                [DllImport("kernel32.dll")] public static extern IntPtr GetProcAddress(IntPtr h, string p);
+                [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
+                [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
+                [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
                 public static void Execute(string path, int pid) {
-                    // ฉีด DLL เข้าไปใน Memory
-                    IntPtr hProc = OpenProcess(0x001F0FFF, false, pid);
-                    if (hProc == IntPtr.Zero) return;
-                    IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
+                    IntPtr h = OpenProcess(0x001F0FFF, false, pid);
+                    if (h == IntPtr.Zero) return;
+                    IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
                     IntPtr w;
-                    WriteProcessMemory(hProc, addr, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out w);
-                    IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
-                    CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
-                    
-                    // ทำลายหลักฐาน: ลบไฟล์ DLL ทิ้งทันทีที่ฉีดเข้า Memory แล้ว
+                    WriteProcessMemory(h, a, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out w);
+                    IntPtr l = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+                    CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero);
                     System.Threading.Thread.Sleep(2000);
                     if (File.Exists(path)) { File.Delete(path); }
                 }
             }
 "@
-            Add-Type -TypeDefinition `$code -ErrorAction SilentlyContinue
-            [NodeGuard]::Execute("$dllPath", `$proc.Id)
+            Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
+            [NodeGuard]::Execute($dll, $proc.Id)
         }
-        
-        # ตรวจจับปุ่ม Home เพื่อถอนการติดตั้งและปิดเกม
         Add-Type -AssemblyName PresentationCore
         if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
-            Stop-Process -Name "$targetProc" -Force -ErrorAction SilentlyContinue
-            Remove-Item "$configPath" -Force -ErrorAction SilentlyContinue
-            Remove-Item "$scriptPath" -Force -ErrorAction SilentlyContinue
-            Remove-Item "$vbsPath" -Force -ErrorAction SilentlyContinue
+            Stop-Process -Name $target -Force -ErrorAction SilentlyContinue
+            $app = "$env:APPDATA\Microsoft\Protect"
+            Remove-Item "$app\Windows_Auth.dat" -Force -ErrorAction SilentlyContinue
+            Remove-Item "$app\SysHost.ps1" -Force -ErrorAction SilentlyContinue
+            Remove-Item "$app\SysHost.vbs" -Force -ErrorAction SilentlyContinue
             break
         }
         Start-Sleep -Seconds 10
     }
-"@
-    # สร้างโฟลเดอร์ซ่อนถ้ายังไม่มี
-    New-Item -ItemType Directory -Path (Split-Path $scriptPath) -Force | Out-Null
+'@
+    # บันทึกไฟล์ลงเครื่อง
+    if (!(Test-Path (Split-Path $scriptPath))) { New-Item -ItemType Directory -Path (Split-Path $scriptPath) -Force }
     $serviceContent | Out-File $scriptPath -Force
 
-    # สร้างตัวเปิดสคริปต์แบบไร้หน้าต่าง (VBS)
-    $vbsContent = "CreateObject(`"Wscript.Shell`").Run `"powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"`", 0, True"
+    # สร้าง VBS Launcher (ใช้ Single Quote เพื่อเลี่ยง Error เครื่องหมายคำพูด)
+    $vbsContent = 'CreateObject("Wscript.Shell").Run "powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File ""' + $scriptPath + '""", 0, True'
     $vbsContent | Out-File $vbsPath -Force
 
-    # ตั้งค่าให้รันอัตโนมัติ (เปลี่ยนชื่อให้เหมือนไฟล์ระบบ Windows)
-    $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-    Set-ItemProperty -Path $runKey -Name "WindowsSecurityHost" -Value "wscript.exe `"$vbsPath`""
+    # Registry Startup
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsSecurityHost" -Value "wscript.exe `"$vbsPath`""
 
-    # สั่งให้ทำงานทันทีในโหมดซ่อน
+    # รันทันที
     Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbsPath`""
     
-    Write-Host "[+] ติดตั้งระบบ BasX Stealth เรียบร้อย" -ForegroundColor Green
-    Write-Host "[*] ระบบจะทำงานเงียบๆ เบื้องหลัง (ไม่ทิ้งร่องรอยไฟล์)" -ForegroundColor Cyan
-    Write-Host "[!] กดปุ่ม 'HOME' เพื่อปิดเกมและล้างข้อมูลทั้งหมด" -ForegroundColor Red
-    Start-Sleep -Seconds 2
-} else {
-    Write-Host "[-] คีย์ไม่ถูกต้องหรือหมดอายุ" -ForegroundColor Red
+    Write-Host "[+] ติดตั้งระบบ BasX Stealth สำเร็จ!" -ForegroundColor Green
+    Write-Host "[*] ระบบกำลังทำงานเบื้องหลัง คุณปิดหน้าต่างนี้ได้เลย" -ForegroundColor Cyan
+    Write-Host "[!] กด 'HOME' เพื่อลบระบบออกทั้งหมด" -ForegroundColor Red
+    Start-Sleep -Seconds 3
 }
