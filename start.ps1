@@ -2,16 +2,16 @@
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # --- App Config ---
-$Name    = "Relaxwtf777's Application"
-$OwnerID = "W404AorT6U"
-$Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
+$Name    = "Babybas4446's Application"
+$OwnerID = "w9341Depcn"
+$Secret  = "84618769c55040980c6e18333ee4dd8d8720c30312fa5591577b0ded60cb8ecd"
 $Version = "1.0"
 $dllUrl  = "https://raw.githubusercontent.com/relaxhaha56-maker/node-storage-33/main/AimbotFemaleFix.dll"
 $target  = "HD-Player"
 
 function Show-Auth {
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "    BASX FORCE INJECTOR v6    " -ForegroundColor Cyan
+    Write-Host "    BASX ELITE     " -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
     try {
