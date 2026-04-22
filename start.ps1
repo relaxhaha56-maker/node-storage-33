@@ -41,28 +41,36 @@ if (Test-Path $configPath) { $currentKey = Get-Content $configPath }
 if (Show-Auth -savedKey $currentKey) {
     Write-Host "[+] Login Success" -ForegroundColor Green
 
-    # --- ขั้นตอนการฉีดและทำลายหลักฐานทันที ---
+    # --- การฉีดและทำลายหลักฐาน ---
     if ((Test-Path $hackerExe) -and (Test-Path $targetDll)) {
         $p = Get-Process $targetProc -ErrorAction SilentlyContinue
         if ($p) {
-            Write-Host "[*] Injecting and wiping traces..." -ForegroundColor Cyan
+            Write-Host "[*] Executing Force Injection..." -ForegroundColor Cyan
             
-            # สั่งฉีด (รอจนกว่าจะเสร็จ -Wait)
-            Start-Process -FilePath $hackerExe -ArgumentList "-c -install -type dll -target $($p.Id) -path `"$targetDll`"" -WindowStyle Hidden -Wait
-            
-            # --- ลบไฟล์ทิ้งทันทีที่ฉีดเสร็จ ---
-            Remove-Item $targetDll -Force -ErrorAction SilentlyContinue
-            Remove-Item $hackerExe -Force -ErrorAction SilentlyContinue
-            
-            Write-Host "[+] Injection Success & Files Deleted." -ForegroundColor Green
+            # ใช้ Start-Process พร้อมVerb 'runas' เพื่อบังคับสิทธิ์สูงสุด และใช้ Argument ที่แม่นยำขึ้น
+            $argList = "-c -install -type dll -target $($p.Id) -path `"$targetDll`""
+            try {
+                $process = Start-Process -FilePath $hackerExe -ArgumentList $argList -WindowStyle Hidden -PassThru -Wait
+                
+                # หน่วงเวลา 2 วินาทีเพื่อให้ DLL ทำการ Load และ Hook สำเร็จก่อนลบ
+                Start-Sleep -Seconds 2
+                
+                # ลบไฟล์ทันที
+                Remove-Item $targetDll -Force -ErrorAction SilentlyContinue
+                Remove-Item $hackerExe -Force -ErrorAction SilentlyContinue
+                
+                Write-Host "[+] Injection Task Complete & Traces Removed." -ForegroundColor Green
+            } catch {
+                Write-Host "[-] Failed to start Activate.exe. Please Run PowerShell as Admin." -ForegroundColor Red
+            }
         } else {
-            Write-Host "[!] HD-Player not found. Injection aborted." -ForegroundColor Yellow
+            Write-Host "[!] HD-Player not found. Open game first!" -ForegroundColor Yellow
         }
     } else {
-        Write-Host "[!] Required files not found in Temp." -ForegroundColor Red
+        Write-Host "[!] Files missing in Temp. Check your GitHub download script." -ForegroundColor Red
     }
 
-    # --- Panic Button (Home) สำหรับลบโฟลเดอร์ระบบ ---
+    # --- Panic Button (Home) ---
     $panicBody = @"
     while (`$true) {
         Add-Type -AssemblyName PresentationCore
@@ -77,6 +85,4 @@ if (Show-Auth -savedKey $currentKey) {
 "@
     $panicBody | Out-File $scriptPath -Force
     Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
-    
-    Write-Host "[*] Ghost Mode Active. No files left in Temp." -ForegroundColor White
 }
