@@ -13,8 +13,6 @@ $vbsPath    = "$dirPath\launcher.vbs"
 $hiddenDll  = "$dirPath\win_sys.dll"
 $tempDll    = "$env:TEMP\winsky.dll"
 $targetProc = "HD-Player"
-$regKey     = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-$regName    = "WindowsHealthMonitor"
 
 function Show-Auth {
     param($savedKey = $null)
@@ -49,73 +47,36 @@ if (Show-Auth -savedKey $currentKey) {
 
     # ย้าย DLL ไปเก็บที่ลับ
     if (Test-Path $tempDll) {
-        try {
-            Copy-Item $tempDll -Destination $hiddenDll -Force -ErrorAction SilentlyContinue
-            Remove-Item $tempDll -Force -ErrorAction SilentlyContinue
-        } catch { }
+        Copy-Item $tempDll -Destination $hiddenDll -Force -ErrorAction SilentlyContinue
     }
 
-    $code = @"
-    using System;
-    using System.Runtime.InteropServices;
-    using System.Text;
-    using System.IO;
-    public class NodeGuard {
-        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int dw, bool b, int p);
-        [DllImport("kernel32.dll")] public static extern IntPtr GetModuleHandle(string n);
-        [DllImport("kernel32.dll")] public static extern IntPtr GetProcAddress(IntPtr h, string p);
-        [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
-        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
-        [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
-        public static void Run(string path, int pid) {
-            IntPtr h = OpenProcess(0x001F0FFF, false, pid);
-            if (h == IntPtr.Zero) return;
-            IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)path.Length + 1, 0x3000, 0x40);
-            IntPtr w;
-            WriteProcessMemory(h, a, Encoding.Default.GetBytes(path), (uint)path.Length + 1, out w);
-            IntPtr l = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
-            CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero);
-        }
+    # สร้างไฟล์ Service เบื้องหลัง (ลดความซับซ้อนกัน Syntax Error)
+    $serviceContent = @"
+Add-Type -TypeDefinition "using System; using System.Runtime.InteropServices; using System.Text; public class NodeGuard { [DllImport(`"kernel32.dll`")] public static extern IntPtr OpenProcess(int d, bool b, int p); [DllImport(`"kernel32.dll`")] public static extern IntPtr GetModuleHandle(string n); [DllImport(`"kernel32.dll`")] public static extern IntPtr GetProcAddress(IntPtr h, string p); [DllImport(`"kernel32.dll`")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr); [DllImport(`"kernel32.dll`")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w); [DllImport(`"kernel32.dll`")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id); public static void Run(string p, int i) { IntPtr h = OpenProcess(0x1F0FFF, false, i); if (h == IntPtr.Zero) return; IntPtr a = VirtualAllocEx(h, IntPtr.Zero, (uint)p.Length + 1, 0x3000, 0x40); IntPtr w; WriteProcessMemory(h, a, Encoding.Default.GetBytes(p), (uint)p.Length + 1, out w); IntPtr l = GetProcAddress(GetModuleHandle(`"kernel32.dll`"), `"LoadLibraryA`" ); CreateRemoteThread(h, IntPtr.Zero, 0, l, a, 0, IntPtr.Zero); } }"
+while (`$true) {
+    `$p = Get-Process "$targetProc" -ErrorAction SilentlyContinue
+    if (`$p) { [NodeGuard]::Run("$hiddenDll", `$p.Id) }
+    Add-Type -AssemblyName PresentationCore
+    if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
+        Stop-Process -Name "$targetProc" -Force -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -ErrorAction SilentlyContinue
+        Remove-Item "$dirPath" -Recurse -Force -ErrorAction SilentlyContinue
+        exit
     }
+    Start-Sleep -Seconds 10
+}
 "@
+    $serviceContent | Out-File $scriptPath -Force
 
-    # ระบบเบื้องหลังพร้อม Panic Button
-    $serviceBody = @"
-    `$target = "$targetProc"
-    `$dir = "$dirPath"
-    while (`$true) {
-        `$proc = Get-Process `$target -ErrorAction SilentlyContinue
-        if (`$proc) {
-            [NodeGuard]::Run("$hiddenDll", `$proc.Id)
-        }
-        
-        # ฟังก์ชัน Panic Button (กด Home)
-        Add-Type -AssemblyName PresentationCore
-        if ([Windows.Input.Keyboard]::IsKeyDown([Windows.Input.Key]::Home)) {
-            # 1. ปิดเกม
-            Stop-Process -Name `$target -Force -ErrorAction SilentlyContinue
-            # 2. ลบ Startup Registry
-            Remove-ItemProperty -Path "$regKey" -Name "$regName" -ErrorAction SilentlyContinue
-            # 3. ลบโฟลเดอร์หลักทิ้งทั้งหมด
-            Remove-Item `$dir -Recurse -Force -ErrorAction SilentlyContinue
-            # 4. ปิดตัวเอง
-            exit
-        }
-        Start-Sleep -Seconds 8
-    }
-"@
-    $finalScript = "Add-Type -TypeDefinition @'`n$code`n'@`n" + $serviceBody
-    $finalScript | Out-File $scriptPath -Force
+    # สร้าง Launcher ที่ 'ไม่มีอักขระพิเศษ' ที่ทำให้ VBS งง
+    $vbsCode = "Set w = CreateObject(`"WScript.Shell`"): w.Run `"powershell -WindowStyle Hidden -File `"`" & w.ExpandEnvironmentStrings(`"%LOCALAPPDATA%\WindowsHealth\service.ps1`") & `"`"`", 0, False"
+    $vbsCode | Out-File $vbsPath -Force
 
-    # แก้ไข VBS ให้คลีนที่สุด (กัน Invalid Character)
-    $vbsContent = "Set s = CreateObject(`"WScript.Shell`"): s.Run `"powershell.exe -WindowStyle Hidden -File `"`" & s.ExpandEnvironmentStrings(`"%LOCALAPPDATA%\WindowsHealth\service.ps1`") & `"`"`", 0, False"
-    $vbsContent | Out-File $vbsPath -Force
-
-    # เซ็ตค่า Registry และรัน
-    Set-ItemProperty -Path $regKey -Name $regName -Value "wscript.exe `"$vbsPath`""
+    # สั่งรันและตั้ง Startup
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "WindowsHealthMonitor" -Value "wscript.exe `"$vbsPath`""
     Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbsPath`""
     
     Write-Host "[+] Stealth Persistence Active" -ForegroundColor Cyan
-    Write-Host "[!] HOME KEY: Close Game & Full Cleanup" -ForegroundColor Red
+    Write-Host "[!] Press 'HOME' to Close Game & Wipe All Records" -ForegroundColor Red
     Start-Sleep -Seconds 2
 }
